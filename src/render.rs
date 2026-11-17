@@ -2,7 +2,7 @@
 //! The same path is used for the live viewport and for PNG export.
 
 use crate::gpu::{self, wgpu};
-use crate::params::{CameraParams, Scene};
+use crate::params::{CameraParams, Scene, WaterLook};
 use crate::smoke::SmokeSim;
 use crate::water::WaterSim;
 use bytemuck::{Pod, Zeroable};
@@ -46,6 +46,21 @@ struct StyleU {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct FluidU {
+    blur: [f32; 4],
+    dir: [f32; 4],
+    shade: [f32; 4],
+    deep: [f32; 4],
+    shallow: [f32; 4],
+    foam: [f32; 4],
+}
+
+pub const FLUID_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
+pub const THICK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+const NO_WATER: f64 = 1.0e6;
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct LineV {
     pos: [f32; 3],
     color: [f32; 4],
@@ -57,6 +72,13 @@ pub struct RenderTarget {
     pub color: wgpu::Texture,
     pub color_view: wgpu::TextureView,
     pub depth_view: wgpu::TextureView,
+    // screen-space fluid buffers
+    fluid_a: wgpu::TextureView,
+    fluid_b: wgpu::TextureView,
+    fluid_z: wgpu::TextureView,
+    thick: wgpu::TextureView,
+    scene_copy: wgpu::Texture,
+    scene_copy_view: wgpu::TextureView,
 }
 
 impl RenderTarget {
@@ -83,12 +105,33 @@ impl RenderTarget {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
+        let tex = |label: &str, format: wgpu::TextureFormat, usage: wgpu::TextureUsages| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            })
+        };
+        let rt = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let view = |t: wgpu::Texture| t.create_view(&Default::default());
+        let scene_copy = tex("target.scene_copy", COLOR_FORMAT, wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING);
         Self {
             width,
             height,
             color_view: color.create_view(&Default::default()),
             depth_view: depth.create_view(&Default::default()),
             color,
+            fluid_a: view(tex("fluid.a", FLUID_DEPTH_FORMAT, rt)),
+            fluid_b: view(tex("fluid.b", FLUID_DEPTH_FORMAT, rt)),
+            fluid_z: view(tex("fluid.z", DEPTH_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT)),
+            thick: view(tex("fluid.thickness", THICK_FORMAT, rt)),
+            scene_copy_view: scene_copy.create_view(&Default::default()),
+            scene_copy,
         }
     }
 }
@@ -124,6 +167,13 @@ pub struct Renderer {
     water: wgpu::RenderPipeline,
     spray: wgpu::RenderPipeline,
     volume: wgpu::RenderPipeline,
+    fluid_layout: wgpu::BindGroupLayout,
+    fluid_depth: wgpu::RenderPipeline,
+    fluid_thick: wgpu::RenderPipeline,
+    fluid_blur: wgpu::RenderPipeline,
+    fluid_shade: wgpu::RenderPipeline,
+    fluid_h: wgpu::Buffer,
+    fluid_v: wgpu::Buffer,
     sampler: wgpu::Sampler,
     dummy_volume: wgpu::TextureView,
     dummy_storage: wgpu::Buffer,
@@ -267,6 +317,71 @@ impl Renderer {
         let spray = make("spray", &part_pl, &part_mod, "vs_spray", "fs_particle", &[], tri, depth_write(true), None);
         let volume = make("volume", &vol_pl, &vol_mod, "vs_main", "fs_main", &[], tri, None, premul_blend());
 
+        // ---- screen-space fluid
+        let tex_entry = |binding: u32, filterable: bool| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let fluid_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("fluid.layout"),
+            entries: &[
+                gpu::uniform(0, vf),
+                gpu::uniform(1, vf),
+                tex_entry(2, false),
+                tex_entry(3, false),
+                tex_entry(4, true),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let fluid_pl = layout(&fluid_layout);
+        let fluid_mod = gpu::shader(device, "fluid.wgsl", include_str!("shaders/fluid.wgsl"));
+        let pipe = |label: &str,
+                    pl: &wgpu::PipelineLayout,
+                    module: &wgpu::ShaderModule,
+                    vs: &str,
+                    fs: &str,
+                    format: wgpu::TextureFormat,
+                    depth: Option<wgpu::DepthStencilState>,
+                    blend: Option<wgpu::BlendState>| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(pl),
+                vertex: wgpu::VertexState { module, entry_point: Some(vs), compilation_options: Default::default(), buffers: &[] },
+                primitive: wgpu::PrimitiveState { topology: tri, ..Default::default() },
+                depth_stencil: depth,
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module,
+                    entry_point: Some(fs),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let additive = Some(wgpu::BlendState {
+            color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+            alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+        });
+        let fluid_depth = pipe("fluid.depth", &part_pl, &part_mod, "vs_water", "fs_fluid_depth", FLUID_DEPTH_FORMAT, depth_write(true), None);
+        let fluid_thick = pipe("fluid.thickness", &part_pl, &part_mod, "vs_water", "fs_thickness", THICK_FORMAT, depth_write(false), additive);
+        let fluid_blur = pipe("fluid.blur", &fluid_pl, &fluid_mod, "vs_full", "fs_blur", FLUID_DEPTH_FORMAT, None, None);
+        let fluid_shade = pipe("fluid.shade", &fluid_pl, &fluid_mod, "vs_full", "fs_shade", COLOR_FORMAT, depth_write(true), None);
+        let fluid_h = gpu::uniform_buffer(device, "fluid.h", &FluidU::zeroed());
+        let fluid_v = gpu::uniform_buffer(device, "fluid.v", &FluidU::zeroed());
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("volume.sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -304,6 +419,13 @@ impl Renderer {
             water,
             spray,
             volume,
+            fluid_layout,
+            fluid_depth,
+            fluid_thick,
+            fluid_blur,
+            fluid_shade,
+            fluid_h,
+            fluid_v,
             sampler,
             dummy_volume: dummy.create_view(&Default::default()),
             dummy_storage,
@@ -440,7 +562,7 @@ impl Renderer {
             }
             if let (Some(w), Some(b)) = (water, &part_bind) {
                 pass.set_bind_group(0, b, &[]);
-                if w.count > 0 {
+                if w.count > 0 && wp.look == WaterLook::Particles {
                     pass.set_pipeline(&self.water);
                     pass.draw(0..6, 0..w.count);
                 }
@@ -454,6 +576,11 @@ impl Renderer {
                 pass.set_bind_group(0, &scene_bind, &[]);
                 pass.set_vertex_buffer(0, lb.slice(..));
                 pass.draw(0..lines.len() as u32, 0..1);
+            }
+        }
+        if let (Some(w), Some(pb)) = (water, &part_bind) {
+            if w.count > 0 && wp.look == WaterLook::Surface {
+                self.fluid_passes(device, queue, &mut enc, target, scene, w, pb);
             }
         }
         if smoke.is_some() {
@@ -475,6 +602,140 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
         queue.submit([enc.finish()]);
+    }
+}
+
+impl Renderer {
+    #[allow(clippy::too_many_arguments)]
+    fn fluid_passes(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        enc: &mut wgpu::CommandEncoder,
+        target: &RenderTarget,
+        scene: &Scene,
+        w: &WaterSim,
+        part_bind: &wgpu::BindGroup,
+    ) {
+        let wp = &scene.water;
+        let radius = wp.cell_size * 0.5 * wp.particle_size;
+        let px_per_unit = target.height as f32 / (2.0 * (scene.camera.fov_deg.to_radians() * 0.5).tan());
+        let make = |dir: [f32; 2]| FluidU {
+            blur: [radius, px_per_unit * wp.smoothing_radius, wp.smoothing_depth, 40.0],
+            dir: [dir[0], dir[1], 0.0, 0.0],
+            shade: [wp.refraction, wp.absorption, wp.thickness_scale, wp.foam_strength],
+            deep: [wp.deep_color[0], wp.deep_color[1], wp.deep_color[2], 0.0],
+            shallow: [wp.shallow_color[0], wp.shallow_color[1], wp.shallow_color[2], 0.0],
+            foam: [wp.foam_color[0], wp.foam_color[1], wp.foam_color[2], 0.0],
+        };
+        queue.write_buffer(&self.fluid_h, 0, bytemuck::bytes_of(&make([1.0, 0.0])));
+        queue.write_buffer(&self.fluid_v, 0, bytemuck::bytes_of(&make([0.0, 1.0])));
+
+        fn color_att(view: &wgpu::TextureView, clear: Option<wgpu::Color>) -> Option<wgpu::RenderPassColorAttachment<'_>> {
+            Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: clear.map(wgpu::LoadOp::Clear).unwrap_or(wgpu::LoadOp::Load),
+                    store: wgpu::StoreOp::Store,
+                },
+            })
+        }
+        let none = wgpu::Color { r: NO_WATER, g: NO_WATER, b: NO_WATER, a: NO_WATER };
+
+        // 1. nearest-sphere eye depth
+        {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("fluid.depth"),
+                color_attachments: &[color_att(&target.fluid_a, Some(none))],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &target.fluid_z,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.fluid_depth);
+            pass.set_bind_group(0, part_bind, &[]);
+            pass.draw(0..6, 0..w.count);
+        }
+        // 2. accumulated thickness (+ foam), occluded by the opaque scene
+        {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("fluid.thickness"),
+                color_attachments: &[color_att(&target.thick, Some(wgpu::Color::TRANSPARENT))],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &target.depth_view,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.fluid_thick);
+            pass.set_bind_group(0, part_bind, &[]);
+            pass.draw(0..6, 0..w.count);
+        }
+        // 3. copy what is behind the water, for refraction
+        enc.copy_texture_to_texture(
+            target.color.as_image_copy(),
+            target.scene_copy.as_image_copy(),
+            wgpu::Extent3d { width: target.width, height: target.height, depth_or_array_layers: 1 },
+        );
+
+        let bind = |depth: &wgpu::TextureView, u: &wgpu::Buffer| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.fluid_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: self.cam_buf.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: u.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(depth) },
+                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&target.thick) },
+                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&target.scene_copy_view) },
+                    wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                ],
+            })
+        };
+        // 4. separable bilateral smoothing: a -> b (horizontal), b -> a (vertical)
+        let bh = bind(&target.fluid_a, &self.fluid_h);
+        let bv = bind(&target.fluid_b, &self.fluid_v);
+        for _ in 0..wp.smoothing_passes.min(8) {
+            for (src_bind, dst) in [(&bh, &target.fluid_b), (&bv, &target.fluid_a)] {
+                let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("fluid.blur"),
+                    color_attachments: &[color_att(dst, None)],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&self.fluid_blur);
+                pass.set_bind_group(0, src_bind, &[]);
+                pass.draw(0..3, 0..1);
+            }
+        }
+        // 5. shade the surface into the target, depth-tested against the scene
+        let bs = bind(&target.fluid_a, &self.fluid_h);
+        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("fluid.shade"),
+            color_attachments: &[color_att(&target.color_view, None)],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &target.depth_view,
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.fluid_shade);
+        pass.set_bind_group(0, &bs, &[]);
+        pass.draw(0..3, 0..1);
     }
 }
 

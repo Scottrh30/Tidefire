@@ -306,6 +306,20 @@ impl TidefireApp {
                     });
                     ui.label(egui::RichText::new("Shading").strong());
                     grid(ui, "water_shade", |ui| {
+                        ui.label("Look");
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut p.look, params::WaterLook::Surface, "Surface");
+                            ui.selectable_value(&mut p.look, params::WaterLook::Particles, "Particles");
+                        });
+                        ui.end_row();
+                        if p.look == params::WaterLook::Surface {
+                            row(ui, "Smoothing passes", Slider::new(&mut p.smoothing_passes, 0..=6));
+                            row(ui, "Smoothing radius", Slider::new(&mut p.smoothing_radius, 0.5..=8.0));
+                            row(ui, "Depth blend", Slider::new(&mut p.smoothing_depth, 0.5..=10.0));
+                            row(ui, "Refraction", Slider::new(&mut p.refraction, 0.0..=4.0));
+                            row(ui, "Absorption", Slider::new(&mut p.absorption, 0.0..=20.0));
+                            row(ui, "Thickness scale", Slider::new(&mut p.thickness_scale, 0.1..=4.0));
+                        }
                         ui.label("Deep");
                         ui.color_edit_button_rgb(&mut p.deep_color);
                         ui.end_row();

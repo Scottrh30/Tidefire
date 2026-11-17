@@ -139,3 +139,36 @@ fn fs_particle(in: VOut) -> FOut {
     o.depth = clamp(clip.z / clip.w, 0.0, 1.0);
     return o;
 }
+
+// ------------------------------------------------------------ screen-space fluid inputs
+fn fwd_dir() -> vec3<f32> {
+    return normalize(cross(cam.cam_up.xyz, cam.cam_right.xyz));
+}
+
+struct DepthOut {
+    @location(0) eye_depth: vec4<f32>,
+    @builtin(frag_depth) depth: f32,
+}
+
+@fragment
+fn fs_fluid_depth(in: VOut) -> DepthOut {
+    let r2 = dot(in.uv, in.uv);
+    if (r2 > 1.0) { discard; }
+    let nz = sqrt(1.0 - r2);
+    let to_cam = normalize(cam.cam_pos.xyz - in.center);
+    let n = cam.cam_right.xyz * in.uv.x + cam.cam_up.xyz * in.uv.y + to_cam * nz;
+    let wp = in.center + n * in.radius;
+    let clip = cam.view_proj * vec4<f32>(wp, 1.0);
+    var o: DepthOut;
+    o.eye_depth = vec4<f32>(dot(wp - cam.cam_pos.xyz, fwd_dir()));
+    o.depth = clamp(clip.z / clip.w, 0.0, 1.0);
+    return o;
+}
+
+@fragment
+fn fs_thickness(in: VOut) -> @location(0) vec4<f32> {
+    let r2 = dot(in.uv, in.uv);
+    if (r2 > 1.0) { discard; }
+    let t = 2.0 * in.radius * sqrt(1.0 - r2);
+    return vec4<f32>(t, in.foam * t, t, 0.0);
+}

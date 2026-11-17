@@ -144,6 +144,16 @@ pub enum Transfer {
     Flip,
 }
 
+/// How the liquid is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum WaterLook {
+    /// Smooth screen-space surface with refraction, absorption and reflections.
+    #[default]
+    Surface,
+    /// Every particle as a shaded sphere (debug / stylised look).
+    Particles,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WaterParams {
@@ -169,6 +179,13 @@ pub struct WaterParams {
     pub foam_threshold: f32,
     pub foam_decay: f32,
     // shading
+    pub look: WaterLook,
+    pub smoothing_passes: u32,
+    pub smoothing_radius: f32,
+    pub smoothing_depth: f32,
+    pub refraction: f32,
+    pub absorption: f32,
+    pub thickness_scale: f32,
     pub deep_color: [f32; 3],
     pub shallow_color: [f32; 3],
     pub foam_color: [f32; 3],
@@ -200,6 +217,13 @@ impl Default for WaterParams {
             spray_lifetime: 1.2,
             foam_threshold: 3.0,
             foam_decay: 1.8,
+            look: WaterLook::Surface,
+            smoothing_passes: 2,
+            smoothing_radius: 2.5,
+            smoothing_depth: 3.0,
+            refraction: 1.0,
+            absorption: 3.0,
+            thickness_scale: 1.0,
             deep_color: [0.008, 0.06, 0.15],
             shallow_color: [0.03, 0.26, 0.44],
             foam_color: [0.9, 0.95, 1.0],
