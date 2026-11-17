@@ -1,0 +1,112 @@
+//! Tidefire — real-time GPU fire, smoke and water VFX.
+//!
+//! GUI:       tidefire
+//! Headless:  tidefire --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR]
+//!                     [--transparent] [--stats]
+
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
+mod app;
+mod engine;
+mod gpu;
+mod params;
+mod render;
+mod smoke;
+mod water;
+
+use gpu::wgpu;
+use std::path::PathBuf;
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--headless") {
+        if let Err(e) = headless(&args) {
+            eprintln!("tidefire: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("Tidefire {}\n\nUsage:\n  tidefire\n  tidefire --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR] [--transparent] [--stats]\n\nPresets: {}", env!("CARGO_PKG_VERSION"), params::PRESETS.join(", "));
+        return;
+    }
+    let options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_title("Tidefire - fire & water VFX")
+            .with_inner_size([1500.0, 900.0])
+            .with_min_inner_size([900.0, 560.0]),
+        renderer: eframe::Renderer::Wgpu,
+        ..Default::default()
+    };
+    if let Err(e) = eframe::run_native("Tidefire", options, Box::new(|cc| Ok(Box::new(app::TidefireApp::new(cc))))) {
+        eprintln!("tidefire: {e}");
+        std::process::exit(1);
+    }
+}
+
+fn arg<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(|s| s.as_str())
+}
+
+fn headless(args: &[String]) -> Result<(), String> {
+    let mut scene = if let Some(path) = arg(args, "--scene") {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+        serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?
+    } else {
+        let name = arg(args, "--preset").unwrap_or("Campfire");
+        params::preset(name).ok_or_else(|| format!("unknown preset \"{name}\" (try: {})", params::PRESETS.join(", ")))?
+    };
+    if let Some(n) = arg(args, "--frames") {
+        scene.export.frames = n.parse().map_err(|_| "bad --frames")?;
+    }
+    if let Some(sz) = arg(args, "--size") {
+        let (w, h) = sz.split_once('x').ok_or("--size expects WxH")?;
+        scene.export.width = w.parse().map_err(|_| "bad width")?;
+        scene.export.height = h.parse().map_err(|_| "bad height")?;
+    }
+    if args.iter().any(|a| a == "--transparent") {
+        scene.render.transparent_background = true;
+    }
+    let out = PathBuf::from(arg(args, "--out").unwrap_or("tidefire_out"));
+    std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+    let stats = args.iter().any(|a| a == "--stats");
+
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        compatible_surface: None,
+        apply_limit_buckets: false,
+    }))
+    .map_err(|e| format!("no GPU adapter: {e}"))?;
+    eprintln!("adapter: {} ({:?})", adapter.get_info().name, adapter.get_info().backend);
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("tidefire"),
+        ..Default::default()
+    }))
+    .map_err(|e| e.to_string())?;
+    device.on_uncaptured_error(std::sync::Arc::new(|e| {
+        eprintln!("wgpu error: {e}");
+        std::process::exit(2);
+    }));
+
+    let frames = scene.export.frames;
+    let (w, h) = (scene.export.width, scene.export.height);
+    app::write_manifest(&out, &scene).map_err(|e| e.to_string())?;
+    let prefix = scene.export.prefix.clone();
+    let mut eng = engine::Engine::new(device, queue, scene);
+    let target = render::RenderTarget::new(&eng.device, w, h);
+    let t0 = std::time::Instant::now();
+    for f in 0..frames {
+        eng.step_frame();
+        eng.render(&target, true);
+        let img = engine::read_target(&eng.device, &eng.queue, &target);
+        let path = engine::frame_path(&out, &prefix, f);
+        img.save(&path).map_err(|e| e.to_string())?;
+        if stats {
+            eprintln!("frame {f:4}  particles {:7}  step {:.1} ms", eng.particle_count(), eng.last_step_ms);
+        }
+    }
+    eprintln!("wrote {frames} frames to {} in {:.1}s", out.display(), t0.elapsed().as_secs_f32());
+    Ok(())
+}
