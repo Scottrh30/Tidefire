@@ -18,12 +18,13 @@ struct PStyle {
     foam: vec4<f32>,        // foam colour, foam strength
 }
 
-struct Particle { pos: vec4<f32>, vel: vec4<f32> }
+struct Particle { pos: vec4<f32>, vel: vec4<f32>, c0: vec4<f32>, c1: vec4<f32>, c2: vec4<f32> }
+struct Drop { pos: vec4<f32>, vel: vec4<f32> }
 
 @group(0) @binding(0) var<uniform> cam: Camera;
 @group(0) @binding(1) var<uniform> style: PStyle;
 @group(0) @binding(2) var<storage, read> particles: array<Particle>;
-@group(0) @binding(3) var<storage, read> spray: array<Particle>;
+@group(0) @binding(3) var<storage, read> spray: array<Drop>;
 
 struct VOut {
     @builtin(position) clip: vec4<f32>,

@@ -1,7 +1,7 @@
 //! GPU FLIP liquid + whitewater spray simulator.
 
 use crate::gpu::{self, wgpu};
-use crate::params::WaterParams;
+use crate::params::{Transfer, WaterParams};
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
@@ -21,7 +21,11 @@ struct WaterU {
 pub struct Particle {
     pub pos: [f32; 4],
     pub vel: [f32; 4],
+    /// APIC affine velocity (rows = gradient of u, v, w per cell)
+    pub c: [[f32; 4]; 3],
 }
+
+const PARTICLE_BYTES: u64 = std::mem::size_of::<Particle>() as u64;
 
 struct Pipes {
     clear_grid: wgpu::ComputePipeline,
@@ -68,7 +72,7 @@ impl WaterSim {
         let nodes = ((res[0] + 1) * (res[1] + 1) * (res[2] + 1)) as u64;
         let max_particles = p.max_particles.clamp(1024, 4_000_000);
         let max_spray = if p.spray_enabled { p.max_spray.clamp(1024, 4_000_000) } else { 1024 };
-        let particles = gpu::buffer(device, "water.particles", max_particles as u64 * 32, gpu::STORAGE);
+        let particles = gpu::buffer(device, "water.particles", max_particles as u64 * PARTICLE_BYTES, gpu::STORAGE);
         let accum = gpu::buffer(device, "water.accum", nodes * 7 * 4, gpu::STORAGE);
         let gvel = gpu::buffer(device, "water.gvel", nodes * 16, gpu::STORAGE);
         let gvel_old = gpu::buffer(device, "water.gvel_old", nodes * 16, gpu::STORAGE);
@@ -138,7 +142,7 @@ impl WaterSim {
             box_min: [p.box_min[0], p.box_min[1], p.box_min[2], p.cell_size],
             misc: [dt, p.flip_ratio, p.gravity, time],
             spray: [p.spray_threshold, p.spray_amount, p.spray_drag, p.spray_lifetime],
-            spray2: [if p.spray_enabled { self.max_spray } else { 0 }, self.frame, 0, 0],
+            spray2: [if p.spray_enabled { self.max_spray } else { 0 }, self.frame, if p.transfer == Transfer::Apic { 0 } else { 1 }, 0],
             foam: [p.foam_threshold, p.foam_decay, p.density_correction, 8.0],
         }
     }
@@ -160,7 +164,7 @@ impl WaterSim {
         if n == 0 {
             return;
         }
-        queue.write_buffer(&self.particles, self.count as u64 * 32, bytemuck::cast_slice(&new[..n]));
+        queue.write_buffer(&self.particles, self.count as u64 * PARTICLE_BYTES, bytemuck::cast_slice(&new[..n]));
         self.count += n as u32;
     }
 
@@ -185,7 +189,7 @@ impl WaterSim {
                                 + Vec3::new(self.rng.next(), self.rng.next(), self.rng.next()) * 0.5;
                             let g = Vec3::new(i as f32, j as f32, k as f32) + o;
                             if g.cmpge(lo).all() && g.cmplt(hi).all() && self.inside(g) {
-                                seeds.push(Particle { pos: [g.x, g.y, g.z, 0.0], vel: [b.velocity[0], b.velocity[1], b.velocity[2], 0.0] });
+                                seeds.push(Particle { pos: [g.x, g.y, g.z, 0.0], vel: [b.velocity[0], b.velocity[1], b.velocity[2], 0.0], c: [[0.0; 4]; 3] });
                             }
                         }
                     }
@@ -235,7 +239,7 @@ impl WaterSim {
                 let w = Vec3::from(jet.pos) + (t1 * ang.cos() + t2 * ang.sin()) * rr + dir * along;
                 let g = Self::to_grid(p, w);
                 if self.inside(g) {
-                    out.push(Particle { pos: [g.x, g.y, g.z, 0.0], vel: [v.x, v.y, v.z, time] });
+                    out.push(Particle { pos: [g.x, g.y, g.z, 0.0], vel: [v.x, v.y, v.z, time], c: [[0.0; 4]; 3] });
                 }
             }
         }

@@ -5,7 +5,7 @@ Real-time GPU fire, smoke and water VFX, in Rust (egui + wgpu). In the spirit of
 ## Milestone 1
 
 - **Fire & smoke:** a GPU voxel solver. It handles emission with noise flicker, fuel, combustion (fuel → heat + soot), buoyancy, vorticity confinement, wind, an open or closed top and a red-black pressure projection. The volume is raymarched with filmic tonemapping, a blackbody-style flame ramp, light shadowing and smoke lit by the fire.
-- **Water:** GPU FLIP/PIC liquid on a staggered grid. Particle-to-grid transfer uses fixed-point atomics, with a free-surface pressure solve, volume preservation and RK2 advection. Sources are fill blocks and jets.
+- **Water:** GPU APIC liquid (Affine Particle-In-Cell, the default) on a staggered grid, with the original FLIP/PIC blend still selectable. Particle-to-grid transfer uses fixed-point atomics, with a free-surface pressure solve, volume preservation and RK2 advection. Sources are fill blocks and jets.
 - **Whitewater:** foam on fast or agitated particles. Ballistic spray droplets are spawned from fast surface particles and get drag, a set lifetime and re-absorption into the water.
 - **Combined scenes:** fire and water run side by side, each in its own domain, and depth-composite correctly.
 - **Live editing:** every parameter is editable while the sim runs. Orbit camera: drag to orbit, right/middle drag to pan, wheel to zoom.

@@ -27,7 +27,7 @@ fn main() {
         return;
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("Tidefire {}\n\nUsage:\n  tidefire\n  tidefire --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR] [--transparent] [--stats]\n\nPresets: {}", env!("CARGO_PKG_VERSION"), params::PRESETS.join(", "));
+        println!("Tidefire {}\n\nUsage:\n  tidefire\n  tidefire --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR] [--transfer apic|flip] [--transparent] [--stats]\n\nPresets: {}", env!("CARGO_PKG_VERSION"), params::PRESETS.join(", "));
         return;
     }
     let options = eframe::NativeOptions {
@@ -63,6 +63,13 @@ fn headless(args: &[String]) -> Result<(), String> {
         let (w, h) = sz.split_once('x').ok_or("--size expects WxH")?;
         scene.export.width = w.parse().map_err(|_| "bad width")?;
         scene.export.height = h.parse().map_err(|_| "bad height")?;
+    }
+    if let Some(t) = arg(args, "--transfer") {
+        scene.water.transfer = match t {
+            "apic" | "APIC" => params::Transfer::Apic,
+            "flip" | "FLIP" => params::Transfer::Flip,
+            _ => return Err("--transfer expects apic or flip".into()),
+        };
     }
     if args.iter().any(|a| a == "--transparent") {
         scene.render.transparent_background = true;

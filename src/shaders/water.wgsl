@@ -10,13 +10,17 @@ struct WParams {
     box_min: vec4<f32>, // world min xyz, cell size h
     misc: vec4<f32>,    // dt, flip ratio, gravity, time
     spray: vec4<f32>,   // spray speed threshold, spawn probability, air drag, lifetime
-    spray2: vec4<u32>,  // max spray, frame seed, _, _
+    spray2: vec4<u32>,  // max spray, frame seed, transfer (0 = APIC, 1 = FLIP), _
     foam: vec4<f32>,    // foam speed threshold, foam decay, density correction, rest count
 }
 
 struct Particle {
     pos: vec4<f32>, // grid units, w = foam
     vel: vec4<f32>, // m/s, w = spawn time
+    // APIC affine velocity: row c = gradient of velocity component c, in (m/s) per cell
+    c0: vec4<f32>,
+    c1: vec4<f32>,
+    c2: vec4<f32>,
 }
 
 struct Spray {
@@ -90,7 +94,9 @@ fn p2g(@builtin(global_invocation_id) g: vec3<u32>) {
     if (id >= P.res.w) { return; }
     let p = particles[id];
     let vel = p.vel.xyz;
+    let cm = mat3x3<f32>(p.c0.xyz, p.c1.xyz, p.c2.xyz); // column c = gradient of component c
     for (var comp = 0u; comp < 3u; comp++) {
+        let grad = cm[comp];
         let q = p.pos.xyz - comp_offset(comp);
         let b = vec3<i32>(floor(q));
         let f = q - floor(q);
@@ -102,7 +108,9 @@ fn p2g(@builtin(global_invocation_id) g: vec3<u32>) {
             let w = wv.x * wv.y * wv.z;
             if (w <= 0.0) { continue; }
             let n = nidx(nc);
-            atomicAdd(&accum[n * 7u + comp], i32(round(vel[comp] * w * FIX)));
+            // APIC: the particle's velocity field is affine, evaluated at the node (o - f = node - particle, in cells)
+            let vn = vel[comp] + dot(grad, vec3<f32>(o) - f);
+            atomicAdd(&accum[n * 7u + comp], i32(round(clamp(vn, -40.0, 40.0) * w * FIX)));
             atomicAdd(&accum[n * 7u + 3u + comp], i32(round(w * FIX)));
         }
     }
@@ -250,6 +258,37 @@ fn project(@builtin(global_invocation_id) g: vec3<u32>) {
 }
 
 // ------------------------------------------------------------ grid -> particle
+// APIC: value + gradient (per cell) of one velocity component. Gradient is only
+// trusted when all 8 nodes are valid (fully inside the liquid); otherwise zero.
+fn interp_grad(p: vec3<f32>, comp: u32) -> vec4<f32> {
+    let q = p - comp_offset(comp);
+    let b = vec3<i32>(floor(q));
+    let f = q - floor(q);
+    var sum = 0.0;
+    var wsum = 0.0;
+    var grad = vec3<f32>(0.0);
+    var valid = 0u;
+    for (var corner = 0u; corner < 8u; corner++) {
+        let o = vec3<i32>(i32(corner & 1u), i32((corner >> 1u) & 1u), i32((corner >> 2u) & 1u));
+        let nc = b + o;
+        if (!node_in(nc)) { continue; }
+        let gv = gvel[nidx(nc)];
+        if ((u32(gv.w) & (1u << comp)) == 0u) { continue; }
+        let oc = vec3<f32>(o);
+        let wv = mix(vec3<f32>(1.0) - f, f, oc);
+        let sg = oc * 2.0 - vec3<f32>(1.0); // d(weight)/d(x): +1 towards o = 1, -1 towards o = 0
+        let w = wv.x * wv.y * wv.z;
+        let dw = vec3<f32>(sg.x * wv.y * wv.z, wv.x * sg.y * wv.z, wv.x * wv.y * sg.z);
+        sum += gv[comp] * w;
+        wsum += w;
+        grad += gv[comp] * dw;
+        valid += 1u;
+    }
+    if (valid == 8u) { return vec4<f32>(grad, sum); }
+    if (wsum > 1e-6) { return vec4<f32>(0.0, 0.0, 0.0, sum / wsum); }
+    return vec4<f32>(0.0, 0.0, 0.0, 1e30); // marker: no grid info
+}
+
 fn interp(p: vec3<f32>, comp: u32, use_old: bool) -> vec2<f32> {
     // returns (value, total valid weight)
     let q = p - comp_offset(comp);
@@ -292,15 +331,18 @@ fn g2p(@builtin(global_invocation_id) g: vec3<u32>) {
     var vp = p.vel.xyz;
     var vpic = vp;
     var vflip = vp;
+    var cm = array<vec3<f32>, 3>(vec3<f32>(0.0), vec3<f32>(0.0), vec3<f32>(0.0));
+    let apic = P.spray2.z == 0u;
     for (var comp = 0u; comp < 3u; comp++) {
-        let nw = interp(p.pos.xyz, comp, false);
+        let ng = interp_grad(p.pos.xyz, comp);
         let od = interp(p.pos.xyz, comp, true);
-        if (nw.y > 0.0) {
-            vpic[comp] = nw.x;
+        if (ng.w < 1e29) {
+            vpic[comp] = ng.w;
+            cm[comp] = ng.xyz;
             if (od.y > 0.0) {
-                vflip[comp] = vp[comp] + (nw.x - od.x);
+                vflip[comp] = vp[comp] + (ng.w - od.x);
             } else {
-                vflip[comp] = nw.x;
+                vflip[comp] = ng.w;
             }
         } else {
             // ballistic: no grid information here
@@ -308,7 +350,13 @@ fn g2p(@builtin(global_invocation_id) g: vec3<u32>) {
             vflip[comp] = vpic[comp];
         }
     }
-    var v = mix(vpic, vflip, P.misc.y);
+    var v: vec3<f32>;
+    if (apic) {
+        v = vpic;
+    } else {
+        v = mix(vpic, vflip, P.misc.y);
+        cm = array<vec3<f32>, 3>(vec3<f32>(0.0), vec3<f32>(0.0), vec3<f32>(0.0));
+    }
     let sp = length(v);
     if (sp > 25.0) { v = v * (25.0 / sp); }
 
@@ -335,6 +383,9 @@ fn g2p(@builtin(global_invocation_id) g: vec3<u32>) {
 
     p.pos = vec4<f32>(pos, foam);
     p.vel = vec4<f32>(v, p.vel.w);
+    p.c0 = vec4<f32>(cm[0], 0.0);
+    p.c1 = vec4<f32>(cm[1], 0.0);
+    p.c2 = vec4<f32>(cm[2], 0.0);
     particles[id] = p;
 
     // spray emission from fast particles at the free surface

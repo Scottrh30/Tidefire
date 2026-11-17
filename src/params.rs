@@ -134,6 +134,16 @@ impl Default for WaterJet {
     }
 }
 
+/// How velocity moves between particles and the grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Transfer {
+    /// Affine Particle-In-Cell: keeps rotation and detail without FLIP noise.
+    #[default]
+    Apic,
+    /// FLIP/PIC blend (the original solver).
+    Flip,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WaterParams {
@@ -144,6 +154,7 @@ pub struct WaterParams {
     pub max_particles: u32,
     pub blocks: Vec<WaterBlock>,
     pub jets: Vec<WaterJet>,
+    pub transfer: Transfer,
     pub flip_ratio: f32,
     pub gravity: f32,
     pub pressure_iters: u32,
@@ -176,6 +187,7 @@ impl Default for WaterParams {
             max_particles: 400_000,
             blocks: vec![WaterBlock::default()],
             jets: vec![],
+            transfer: Transfer::Apic,
             flip_ratio: 0.96,
             gravity: 9.81,
             pressure_iters: 40,

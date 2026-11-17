@@ -230,7 +230,15 @@ impl TidefireApp {
                     });
                     ui.label(egui::RichText::new("Solver").strong());
                     grid(ui, "water_solver", |ui| {
-                        row(ui, "FLIP / PIC", Slider::new(&mut p.flip_ratio, 0.0..=1.0));
+                        ui.label("Transfer");
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut p.transfer, params::Transfer::Apic, "APIC");
+                            ui.selectable_value(&mut p.transfer, params::Transfer::Flip, "FLIP");
+                        });
+                        ui.end_row();
+                        if p.transfer == params::Transfer::Flip {
+                            row(ui, "FLIP / PIC", Slider::new(&mut p.flip_ratio, 0.0..=1.0));
+                        }
                         row(ui, "Gravity", Slider::new(&mut p.gravity, 0.0..=30.0));
                         row(ui, "Pressure iters", Slider::new(&mut p.pressure_iters, 4..=150));
                         row(ui, "Volume keep", Slider::new(&mut p.density_correction, 0.0..=0.3));
