@@ -27,6 +27,17 @@ tidefire --headless --preset "Fire & Water" --frames 120 --size 1920x1080 --out 
 tidefire --headless --scene my_shot.tidefire --out shots/my_shot
 ```
 
+## Visual tests
+
+Every preset is rendered headless and compared with the reference frames in `tests/visual/`. The test checks the frame layout plus colour, brightness and texture statistics. These are tolerant of the sims' natural chaotic drift but catch real look regressions.
+
+```
+tidefire --visual-test tests/visual            # compare; renders and diffs go to tests/visual/out/
+tidefire --visual-test tests/visual --update   # accept the current look as the new reference
+```
+
+`.github/workflows/visual-tests.yml` runs this on every push and pull request, on an Ubuntu runner using Mesa's software Vulkan driver. The results table appears on the run's summary page. When a test fails, the renders and diffs are uploaded for 3 days. After an intentional look change, run `--update` and commit the new references.
+
 ## Windows .exe
 
 `.github/workflows/windows.yml` builds `tidefire-windows-x64.zip` on every push to `main`, and attaches it to the GitHub release when you push a `v*` tag.

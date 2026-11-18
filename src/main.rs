@@ -12,6 +12,7 @@ mod gpu;
 mod params;
 mod render;
 mod smoke;
+mod visual_test;
 mod water;
 
 use gpu::wgpu;
@@ -19,6 +20,22 @@ use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(dir) = arg(&args, "--visual-test") {
+        let update = args.iter().any(|a| a == "--update");
+        let result = headless_device().and_then(|(d, q)| visual_test::run(&d, &q, std::path::Path::new(dir), update));
+        match result {
+            Ok(true) => eprintln!("visual tests passed"),
+            Ok(false) => {
+                eprintln!("visual tests FAILED (renders and diffs in {dir}/out)");
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("tidefire: {e}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--headless") {
         if let Err(e) = headless(&args) {
             eprintln!("tidefire: {e}");
@@ -78,24 +95,7 @@ fn headless(args: &[String]) -> Result<(), String> {
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     let stats = args.iter().any(|a| a == "--stats");
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        force_fallback_adapter: false,
-        compatible_surface: None,
-        apply_limit_buckets: false,
-    }))
-    .map_err(|e| format!("no GPU adapter: {e}"))?;
-    eprintln!("adapter: {} ({:?})", adapter.get_info().name, adapter.get_info().backend);
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("tidefire"),
-        ..Default::default()
-    }))
-    .map_err(|e| e.to_string())?;
-    device.on_uncaptured_error(std::sync::Arc::new(|e| {
-        eprintln!("wgpu error: {e}");
-        std::process::exit(2);
-    }));
+    let (device, queue) = headless_device()?;
 
     let frames = scene.export.frames;
     let (w, h) = (scene.export.width, scene.export.height);
@@ -116,4 +116,28 @@ fn headless(args: &[String]) -> Result<(), String> {
     }
     eprintln!("wrote {frames} frames to {} in {:.1}s", out.display(), t0.elapsed().as_secs_f32());
     Ok(())
+}
+
+/// GPU device for headless rendering (no window). Uses whatever adapter the
+/// system offers, including software Vulkan (lavapipe) on CI.
+fn headless_device() -> Result<(wgpu::Device, wgpu::Queue), String> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        compatible_surface: None,
+        apply_limit_buckets: false,
+    }))
+    .map_err(|e| format!("no GPU adapter: {e}"))?;
+    eprintln!("adapter: {} ({:?})", adapter.get_info().name, adapter.get_info().backend);
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("tidefire"),
+        ..Default::default()
+    }))
+    .map_err(|e| e.to_string())?;
+    device.on_uncaptured_error(std::sync::Arc::new(|e| {
+        eprintln!("wgpu error: {e}");
+        std::process::exit(2);
+    }));
+    Ok((device, queue))
 }

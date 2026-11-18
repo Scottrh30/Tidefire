@@ -1,3 +1,5 @@
 target/
 /tidefire_out/
 *.png
+!tests/visual/*.png
+tests/visual/out/
