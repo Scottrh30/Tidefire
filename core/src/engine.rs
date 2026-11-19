@@ -58,7 +58,9 @@ impl Engine {
             rebuilt = true;
         }
         let w = &self.scene.water;
-        let want_w = w.enabled.then_some((w.res, w.max_particles, w.max_spray, w.spray_enabled));
+        let want_w = w
+            .enabled
+            .then_some((w.res, w.max_particles, w.max_spray, w.spray_enabled));
         if want_w != self.built_water {
             self.water = want_w.map(|_| WaterSim::new(&self.device, w));
             self.built_water = want_w;
@@ -110,7 +112,14 @@ impl Engine {
             }
             if let Some(k) = &mut self.sparks {
                 let smoke = self.smoke.as_ref().map(|s| (s, &self.scene.smoke));
-                k.step(&self.device, &self.queue, &self.scene.sparks, smoke, dt, self.time);
+                k.step(
+                    &self.device,
+                    &self.queue,
+                    &self.scene.sparks,
+                    smoke,
+                    dt,
+                    self.time,
+                );
             }
             self.time += dt;
         }
@@ -135,7 +144,6 @@ impl Engine {
     pub fn particle_count(&self) -> u32 {
         self.water.as_ref().map(|w| w.count).unwrap_or(0)
     }
-
 }
 
 struct Readback {
@@ -155,15 +163,33 @@ fn start_readback(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget) 
     });
     let mut enc = device.create_command_encoder(&Default::default());
     enc.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo { texture: &t.color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        wgpu::TexelCopyTextureInfo {
+            texture: &t.color,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
         wgpu::TexelCopyBufferInfo {
             buffer: &buf,
-            layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(bpr), rows_per_image: Some(t.height) },
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bpr),
+                rows_per_image: Some(t.height),
+            },
         },
-        wgpu::Extent3d { width: t.width, height: t.height, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: t.width,
+            height: t.height,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit([enc.finish()]);
-    Readback { buf, bpr, width: t.width, height: t.height }
+    Readback {
+        buf,
+        bpr,
+        width: t.width,
+        height: t.height,
+    }
 }
 
 fn finish_readback(r: Readback) -> image::RgbaImage {
@@ -176,7 +202,11 @@ fn finish_readback(r: Readback) -> image::RgbaImage {
             let a = p[3];
             // stored colour is premultiplied; undo it for PNG (straight alpha)
             let un = |c: u8| -> u8 {
-                if a == 0 || a == 255 { c } else { ((c as f32 * 255.0 / a as f32).round()).min(255.0) as u8 }
+                if a == 0 || a == 255 {
+                    c
+                } else {
+                    ((c as f32 * 255.0 / a as f32).round()).min(255.0) as u8
+                }
             };
             img.put_pixel(x, y, image::Rgba([un(p[0]), un(p[1]), un(p[2]), a]));
         }
@@ -189,22 +219,36 @@ fn finish_readback(r: Readback) -> image::RgbaImage {
 /// Copy a render target back to the CPU as straight-alpha RGBA8 (sRGB), blocking
 /// until the GPU is done. Native only (a browser can't block on the GPU).
 #[cfg(not(target_arch = "wasm32"))]
-pub fn read_target(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget) -> image::RgbaImage {
+pub fn read_target(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    t: &RenderTarget,
+) -> image::RgbaImage {
     let r = start_readback(device, queue, t);
     r.buf.map_async(wgpu::MapMode::Read, .., |_| {});
-    let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+    let _ = device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: None,
+    });
     finish_readback(r)
 }
 
 /// Same as `read_target`, without blocking: works in the browser (WebGPU) too.
-pub async fn read_target_async(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget) -> Result<image::RgbaImage, String> {
+pub async fn read_target_async(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    t: &RenderTarget,
+) -> Result<image::RgbaImage, String> {
     let r = start_readback(device, queue, t);
     let (tx, rx) = futures_channel::oneshot::channel();
     r.buf.map_async(wgpu::MapMode::Read, .., move |res| {
         let _ = tx.send(res);
     });
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+    let _ = device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: None,
+    });
     match rx.await {
         Ok(Ok(())) => Ok(finish_readback(r)),
         Ok(Err(e)) => Err(format!("could not read the frame back from the GPU: {e}")),

@@ -12,7 +12,11 @@ use tidefire_core::engine;
 use tidefire_core::render::RenderTarget;
 
 async fn run(ui: Ui) -> Result<u32, String> {
-    let folder = ui.export.folder.get_untracked().ok_or("choose a folder first")?;
+    let folder = ui
+        .export
+        .folder
+        .get_untracked()
+        .ok_or("choose a folder first")?;
     let scene = ui.scene.get_untracked();
     let e = scene.export.clone();
     // Make sure the engine has the latest edits, then optionally start over.
@@ -24,7 +28,12 @@ async fn run(ui: Ui) -> Result<u32, String> {
         (eng.device.clone(), eng.queue.clone())
     })
     .ok_or("the viewport's GPU has not started")?;
-    host::write_text(&folder, &engine::manifest_name(&e.prefix), &engine::sequence_manifest(&scene)).await?;
+    host::write_text(
+        &folder,
+        &engine::manifest_name(&e.prefix),
+        &engine::sequence_manifest(&scene),
+    )
+    .await?;
     let target = RenderTarget::new(&device, e.width, e.height);
     ui.export.total.set(e.frames);
     for i in 0..e.frames {
@@ -37,8 +46,14 @@ async fn run(ui: Ui) -> Result<u32, String> {
         });
         let img = engine::read_target_async(&device, &queue, &target).await?;
         let mut png = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).map_err(|e| e.to_string())?;
-        host::write_file(&folder, &engine::frame_name(&e.prefix, e.start_frame + i), &png).await?;
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .map_err(|e| e.to_string())?;
+        host::write_file(
+            &folder,
+            &engine::frame_name(&e.prefix, e.start_frame + i),
+            &png,
+        )
+        .await?;
         ui.export.done.set(i + 1);
     }
     Ok(e.frames)
@@ -59,7 +74,9 @@ fn start(ui: Ui) {
         ui.rev.update(|r| *r += 1);
         let folder = ui.export.folder.get_untracked().unwrap_or_default();
         match result {
-            Ok(n) if ui.export.cancel.get_untracked() => ui.status.set(format!("Export cancelled after {n} frames")),
+            Ok(n) if ui.export.cancel.get_untracked() => {
+                ui.status.set(format!("Export cancelled after {n} frames"))
+            }
             Ok(n) => {
                 ui.status.set(format!("Exported {n} frames to {folder}"));
                 ui.export.open.set(false);
@@ -72,10 +89,12 @@ fn start(ui: Ui) {
 #[component]
 pub fn ExportDialog(ui: Ui) -> impl IntoView {
     let x = ui.export;
-    let size_preset = move |w: u32, h: u32| ui.edit(|s| {
-        s.export.width = w;
-        s.export.height = h;
-    });
+    let size_preset = move |w: u32, h: u32| {
+        ui.edit(|s| {
+            s.export.width = w;
+            s.export.height = h;
+        })
+    };
     let show_progress = move || x.running.get() || x.done.get() != 0;
     let pick = move |_| {
         leptos::task::spawn_local(async move {

@@ -80,6 +80,14 @@ log.push(`grinder: ${await untilFrame(30, 60000)}`);
 await pause();
 await page.locator('.section header', { hasText: 'Sparks' }).scrollIntoViewIfNeeded();
 await shot('04b-grinder-and-panel');
+// Open ocean: procedural sea to the horizon, then its panel section.
+await preset('Open Ocean');
+await play();
+log.push(`ocean: ${await untilFrame(10, 60000)}`);
+await pause();
+await page.locator('.section header', { hasText: 'Ocean' }).click();
+await page.locator('.section header', { hasText: 'Ocean' }).scrollIntoViewIfNeeded();
+await shot('04c-open-ocean');
 await preset('Fire & Water');
 
 // Dropdowns: open Combustion (fire) and Whitewater (water), close Emitter.

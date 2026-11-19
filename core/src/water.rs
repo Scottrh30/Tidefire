@@ -71,8 +71,17 @@ impl WaterSim {
         let res = p.res.map(|r| r.clamp(8, 384));
         let nodes = ((res[0] + 1) * (res[1] + 1) * (res[2] + 1)) as u64;
         let max_particles = p.max_particles.clamp(1024, 4_000_000);
-        let max_spray = if p.spray_enabled { p.max_spray.clamp(1024, 4_000_000) } else { 1024 };
-        let particles = gpu::buffer(device, "water.particles", max_particles as u64 * PARTICLE_BYTES, gpu::STORAGE);
+        let max_spray = if p.spray_enabled {
+            p.max_spray.clamp(1024, 4_000_000)
+        } else {
+            1024
+        };
+        let particles = gpu::buffer(
+            device,
+            "water.particles",
+            max_particles as u64 * PARTICLE_BYTES,
+            gpu::STORAGE,
+        );
         let accum = gpu::buffer(device, "water.accum", nodes * 7 * 4, gpu::STORAGE);
         let gvel = gpu::buffer(device, "water.gvel", nodes * 16, gpu::STORAGE);
         let gvel_old = gpu::buffer(device, "water.gvel_old", nodes * 16, gpu::STORAGE);
@@ -95,12 +104,21 @@ impl WaterSim {
                 gpu::storage(7, false, cs),
             ],
         });
-        let entries: Vec<wgpu::BindGroupEntry> = [&ubuf, &particles, &accum, &gvel, &gvel_old, &cell, &spray, &counter]
-            .iter()
-            .enumerate()
-            .map(|(i, b)| wgpu::BindGroupEntry { binding: i as u32, resource: b.as_entire_binding() })
-            .collect();
-        let bind = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("water.bind"), layout: &layout, entries: &entries });
+        let entries: Vec<wgpu::BindGroupEntry> = [
+            &ubuf, &particles, &accum, &gvel, &gvel_old, &cell, &spray, &counter,
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, b)| wgpu::BindGroupEntry {
+            binding: i as u32,
+            resource: b.as_entire_binding(),
+        })
+        .collect();
+        let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("water.bind"),
+            layout: &layout,
+            entries: &entries,
+        });
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("water.pl"),
             bind_group_layouts: &[Some(&layout)],
@@ -141,8 +159,18 @@ impl WaterSim {
             res: [self.res[0], self.res[1], self.res[2], self.count],
             box_min: [p.box_min[0], p.box_min[1], p.box_min[2], p.cell_size],
             misc: [dt, p.flip_ratio, p.gravity, time],
-            spray: [p.spray_threshold, p.spray_amount, p.spray_drag, p.spray_lifetime],
-            spray2: [if p.spray_enabled { self.max_spray } else { 0 }, self.frame, if p.transfer == Transfer::Apic { 0 } else { 1 }, 0],
+            spray: [
+                p.spray_threshold,
+                p.spray_amount,
+                p.spray_drag,
+                p.spray_lifetime,
+            ],
+            spray2: [
+                if p.spray_enabled { self.max_spray } else { 0 },
+                self.frame,
+                if p.transfer == Transfer::Apic { 0 } else { 1 },
+                0,
+            ],
             foam: [p.foam_threshold, p.foam_decay, p.density_correction, 8.0],
         }
     }
@@ -152,7 +180,9 @@ impl WaterSim {
     }
 
     fn inside(&self, g: Vec3) -> bool {
-        g.x > 1.02 && g.y > 1.02 && g.z > 1.02
+        g.x > 1.02
+            && g.y > 1.02
+            && g.z > 1.02
             && g.x < self.res[0] as f32 - 1.02
             && g.y < self.res[1] as f32 - 0.02
             && g.z < self.res[2] as f32 - 1.02
@@ -164,7 +194,11 @@ impl WaterSim {
         if n == 0 {
             return;
         }
-        queue.write_buffer(&self.particles, self.count as u64 * PARTICLE_BYTES, bytemuck::cast_slice(&new[..n]));
+        queue.write_buffer(
+            &self.particles,
+            self.count as u64 * PARTICLE_BYTES,
+            bytemuck::cast_slice(&new[..n]),
+        );
         self.count += n as u32;
     }
 
@@ -177,7 +211,11 @@ impl WaterSim {
         let mut seeds = Vec::new();
         for b in &p.blocks {
             let lo = Self::to_grid(p, Vec3::from(b.min)).max(Vec3::splat(1.0));
-            let hi = Self::to_grid(p, Vec3::from(b.max)).min(Vec3::new(self.res[0] as f32 - 1.0, self.res[1] as f32, self.res[2] as f32 - 1.0));
+            let hi = Self::to_grid(p, Vec3::from(b.max)).min(Vec3::new(
+                self.res[0] as f32 - 1.0,
+                self.res[1] as f32,
+                self.res[2] as f32 - 1.0,
+            ));
             let (i0, i1) = (lo.x.floor() as i32, hi.x.ceil() as i32);
             let (j0, j1) = (lo.y.floor() as i32, hi.y.ceil() as i32);
             let (k0, k1) = (lo.z.floor() as i32, hi.z.ceil() as i32);
@@ -185,11 +223,20 @@ impl WaterSim {
                 for j in j0..j1 {
                     for i in i0..i1 {
                         for s in 0..8 {
-                            let o = Vec3::new((s & 1) as f32, ((s >> 1) & 1) as f32, ((s >> 2) & 1) as f32) * 0.5
-                                + Vec3::new(self.rng.next(), self.rng.next(), self.rng.next()) * 0.5;
+                            let o = Vec3::new(
+                                (s & 1) as f32,
+                                ((s >> 1) & 1) as f32,
+                                ((s >> 2) & 1) as f32,
+                            ) * 0.5
+                                + Vec3::new(self.rng.next(), self.rng.next(), self.rng.next())
+                                    * 0.5;
                             let g = Vec3::new(i as f32, j as f32, k as f32) + o;
                             if g.cmpge(lo).all() && g.cmplt(hi).all() && self.inside(g) {
-                                seeds.push(Particle { pos: [g.x, g.y, g.z, 0.0], vel: [b.velocity[0], b.velocity[1], b.velocity[2], 0.0], c: [[0.0; 4]; 3] });
+                                seeds.push(Particle {
+                                    pos: [g.x, g.y, g.z, 0.0],
+                                    vel: [b.velocity[0], b.velocity[1], b.velocity[2], 0.0],
+                                    c: [[0.0; 4]; 3],
+                                });
                             }
                         }
                     }
@@ -197,7 +244,11 @@ impl WaterSim {
             }
         }
         self.upload(queue, &seeds);
-        queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&self.uniforms(p, 0.0, 0.0)));
+        queue.write_buffer(
+            &self.ubuf,
+            0,
+            bytemuck::bytes_of(&self.uniforms(p, 0.0, 0.0)),
+        );
         let mut enc = device.create_command_encoder(&Default::default());
         {
             let mut pass = enc.begin_compute_pass(&Default::default());
@@ -239,24 +290,48 @@ impl WaterSim {
                 let w = Vec3::from(jet.pos) + (t1 * ang.cos() + t2 * ang.sin()) * rr + dir * along;
                 let g = Self::to_grid(p, w);
                 if self.inside(g) {
-                    out.push(Particle { pos: [g.x, g.y, g.z, 0.0], vel: [v.x, v.y, v.z, time], c: [[0.0; 4]; 3] });
+                    out.push(Particle {
+                        pos: [g.x, g.y, g.z, 0.0],
+                        vel: [v.x, v.y, v.z, time],
+                        c: [[0.0; 4]; 3],
+                    });
                 }
             }
         }
         self.upload(queue, &out);
     }
 
-    pub fn step(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, p: &WaterParams, dt: f32, time: f32) {
+    pub fn step(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        p: &WaterParams,
+        dt: f32,
+        time: f32,
+    ) {
         self.emit_jets(queue, p, dt, time);
-        queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&self.uniforms(p, dt, time)));
+        queue.write_buffer(
+            &self.ubuf,
+            0,
+            bytemuck::bytes_of(&self.uniforms(p, dt, time)),
+        );
         let (nx, ny, nz) = (self.res[0] + 1, self.res[1] + 1, self.res[2] + 1);
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("water.step") });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("water.step"),
+        });
         {
-            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("water"), timestamp_writes: None });
+            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("water"),
+                timestamp_writes: None,
+            });
             pass.set_bind_group(0, &self.bind, &[]);
             let grid = |pass: &mut wgpu::ComputePass, pipe: &wgpu::ComputePipeline| {
                 pass.set_pipeline(pipe);
-                pass.dispatch_workgroups(gpu::groups(nx, 4), gpu::groups(ny, 4), gpu::groups(nz, 4));
+                pass.dispatch_workgroups(
+                    gpu::groups(nx, 4),
+                    gpu::groups(ny, 4),
+                    gpu::groups(nz, 4),
+                );
             };
             grid(&mut pass, &self.pipes.clear_grid);
             if self.count > 0 {

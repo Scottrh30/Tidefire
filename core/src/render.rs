@@ -96,7 +96,11 @@ pub struct RenderTarget {
 impl RenderTarget {
     pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
         let (width, height) = (width.max(8), height.max(8));
-        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
         let color = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("target.color"),
             size,
@@ -104,7 +108,9 @@ impl RenderTarget {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: COLOR_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let depth = device.create_texture(&wgpu::TextureDescriptor {
@@ -131,7 +137,11 @@ impl RenderTarget {
         };
         let rt = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
         let view = |t: wgpu::Texture| t.create_view(&Default::default());
-        let scene_copy = tex("target.scene_copy", COLOR_FORMAT, wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING);
+        let scene_copy = tex(
+            "target.scene_copy",
+            COLOR_FORMAT,
+            wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
         Self {
             width,
             height,
@@ -140,7 +150,11 @@ impl RenderTarget {
             color,
             fluid_a: view(tex("fluid.a", FLUID_DEPTH_FORMAT, rt)),
             fluid_b: view(tex("fluid.b", FLUID_DEPTH_FORMAT, rt)),
-            fluid_z: view(tex("fluid.z", DEPTH_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT)),
+            fluid_z: view(tex(
+                "fluid.z",
+                DEPTH_FORMAT,
+                wgpu::TextureUsages::RENDER_ATTACHMENT,
+            )),
             thick: view(tex("fluid.thickness", THICK_FORMAT, rt)),
             scene_copy_view: scene_copy.create_view(&Default::default()),
             scene_copy,
@@ -157,14 +171,28 @@ pub struct CameraMath {
 
 pub fn camera_math(c: &CameraParams, aspect: f32) -> CameraMath {
     let target = Vec3::from(c.target);
-    let dir = Vec3::new(c.pitch.cos() * c.yaw.sin(), c.pitch.sin(), c.pitch.cos() * c.yaw.cos());
+    let dir = Vec3::new(
+        c.pitch.cos() * c.yaw.sin(),
+        c.pitch.sin(),
+        c.pitch.cos() * c.yaw.cos(),
+    );
     let eye = target + dir * c.distance;
     let view = glam::camera::rh::view::look_at_mat4(eye, target, Vec3::Y);
-    let proj = glam::camera::rh::proj::directx::perspective(c.fov_deg.to_radians(), aspect.max(0.01), 0.02, 200.0);
+    let proj = glam::camera::rh::proj::directx::perspective(
+        c.fov_deg.to_radians(),
+        aspect.max(0.01),
+        0.02,
+        200.0,
+    );
     let fwd = (target - eye).normalize();
     let right = fwd.cross(Vec3::Y).normalize();
     let up = right.cross(fwd);
-    CameraMath { eye, view_proj: proj * view, right, up }
+    CameraMath {
+        eye,
+        view_proj: proj * view,
+        right,
+        up,
+    }
 }
 
 pub struct Renderer {
@@ -189,6 +217,12 @@ pub struct Renderer {
     spark_layout: wgpu::BindGroupLayout,
     spark_pipe: wgpu::RenderPipeline,
     spark_style: wgpu::Buffer,
+    ocean_layout: wgpu::BindGroupLayout,
+    ocean_pipe: wgpu::RenderPipeline,
+    sky_pipe: wgpu::RenderPipeline,
+    ocean_buf: wgpu::Buffer,
+    ocean_idx: wgpu::Buffer,
+    ocean_count: u32,
     sampler: wgpu::Sampler,
     dummy_volume: wgpu::TextureView,
     dummy_storage: wgpu::Buffer,
@@ -277,7 +311,11 @@ impl Renderer {
 
         let scene_mod = gpu::shader(device, "scene.wgsl", include_str!("shaders/scene.wgsl"));
         let vol_mod = gpu::shader(device, "volume.wgsl", include_str!("shaders/volume.wgsl"));
-        let part_mod = gpu::shader(device, "particles.wgsl", include_str!("shaders/particles.wgsl"));
+        let part_mod = gpu::shader(
+            device,
+            "particles.wgsl",
+            include_str!("shaders/particles.wgsl"),
+        );
 
         let depth_write = |write: bool| {
             Some(wgpu::DepthStencilState {
@@ -306,31 +344,88 @@ impl Renderer {
                     compilation_options: Default::default(),
                     buffers,
                 },
-                primitive: wgpu::PrimitiveState { topology, ..Default::default() },
+                primitive: wgpu::PrimitiveState {
+                    topology,
+                    ..Default::default()
+                },
                 depth_stencil: depth,
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module,
                     entry_point: Some(fs),
                     compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState { format: COLOR_FORMAT, blend, write_mask: wgpu::ColorWrites::ALL })],
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: COLOR_FORMAT,
+                        blend,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
                 }),
                 multiview_mask: None,
                 cache: None,
             })
         };
         let tri = wgpu::PrimitiveTopology::TriangleList;
-        let ground = make("ground", &scene_pl, &scene_mod, "vs_ground", "fs_ground", &[], tri, depth_write(true), premul_blend());
+        let ground = make(
+            "ground",
+            &scene_pl,
+            &scene_mod,
+            "vs_ground",
+            "fs_ground",
+            &[],
+            tri,
+            depth_write(true),
+            premul_blend(),
+        );
         let line_attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
         let line_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineV>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &line_attrs,
         };
-        let lines = make("lines", &scene_pl, &scene_mod, "vs_line", "fs_line", &[Some(line_layout)], wgpu::PrimitiveTopology::LineList, depth_write(false), premul_blend());
-        let water = make("water", &part_pl, &part_mod, "vs_water", "fs_particle", &[], tri, depth_write(true), None);
-        let spray = make("spray", &part_pl, &part_mod, "vs_spray", "fs_particle", &[], tri, depth_write(true), None);
-        let volume = make("volume", &vol_pl, &vol_mod, "vs_main", "fs_main", &[], tri, None, premul_blend());
+        let lines = make(
+            "lines",
+            &scene_pl,
+            &scene_mod,
+            "vs_line",
+            "fs_line",
+            &[Some(line_layout)],
+            wgpu::PrimitiveTopology::LineList,
+            depth_write(false),
+            premul_blend(),
+        );
+        let water = make(
+            "water",
+            &part_pl,
+            &part_mod,
+            "vs_water",
+            "fs_particle",
+            &[],
+            tri,
+            depth_write(true),
+            None,
+        );
+        let spray = make(
+            "spray",
+            &part_pl,
+            &part_mod,
+            "vs_spray",
+            "fs_particle",
+            &[],
+            tri,
+            depth_write(true),
+            None,
+        );
+        let volume = make(
+            "volume",
+            &vol_pl,
+            &vol_mod,
+            "vs_main",
+            "fs_main",
+            &[],
+            tri,
+            None,
+            premul_blend(),
+        );
 
         // ---- screen-space fluid
         let tex_entry = |binding: u32, filterable: bool| wgpu::BindGroupLayoutEntry {
@@ -360,7 +455,11 @@ impl Renderer {
             ],
         });
         let fluid_pl = layout(&fluid_layout);
-        let fluid_mod = gpu::shader(device, "fluid.wgsl", include_str!("shaders/fluid.wgsl"));
+        let fluid_mod = gpu::shader(
+            device,
+            "fluid.wgsl",
+            &with_sky(include_str!("shaders/fluid.wgsl")),
+        );
         let pipe = |label: &str,
                     pl: &wgpu::PipelineLayout,
                     module: &wgpu::ShaderModule,
@@ -372,40 +471,147 @@ impl Renderer {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(pl),
-                vertex: wgpu::VertexState { module, entry_point: Some(vs), compilation_options: Default::default(), buffers: &[] },
-                primitive: wgpu::PrimitiveState { topology: tri, ..Default::default() },
+                vertex: wgpu::VertexState {
+                    module,
+                    entry_point: Some(vs),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: tri,
+                    ..Default::default()
+                },
                 depth_stencil: depth,
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module,
                     entry_point: Some(fs),
                     compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })],
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
                 }),
                 multiview_mask: None,
                 cache: None,
             })
         };
         let additive = Some(wgpu::BlendState {
-            color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
-            alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
         });
-        let fluid_depth = pipe("fluid.depth", &part_pl, &part_mod, "vs_water", "fs_fluid_depth", FLUID_DEPTH_FORMAT, depth_write(true), None);
-        let fluid_thick = pipe("fluid.thickness", &part_pl, &part_mod, "vs_water", "fs_thickness", THICK_FORMAT, depth_write(false), additive);
-        let fluid_blur = pipe("fluid.blur", &fluid_pl, &fluid_mod, "vs_full", "fs_blur", FLUID_DEPTH_FORMAT, None, None);
-        let fluid_shade = pipe("fluid.shade", &fluid_pl, &fluid_mod, "vs_full", "fs_shade", COLOR_FORMAT, depth_write(true), None);
+        let fluid_depth = pipe(
+            "fluid.depth",
+            &part_pl,
+            &part_mod,
+            "vs_water",
+            "fs_fluid_depth",
+            FLUID_DEPTH_FORMAT,
+            depth_write(true),
+            None,
+        );
+        let fluid_thick = pipe(
+            "fluid.thickness",
+            &part_pl,
+            &part_mod,
+            "vs_water",
+            "fs_thickness",
+            THICK_FORMAT,
+            depth_write(false),
+            additive,
+        );
+        let fluid_blur = pipe(
+            "fluid.blur",
+            &fluid_pl,
+            &fluid_mod,
+            "vs_full",
+            "fs_blur",
+            FLUID_DEPTH_FORMAT,
+            None,
+            None,
+        );
+        let fluid_shade = pipe(
+            "fluid.shade",
+            &fluid_pl,
+            &fluid_mod,
+            "vs_full",
+            "fs_shade",
+            COLOR_FORMAT,
+            depth_write(true),
+            None,
+        );
         let fluid_h = gpu::uniform_buffer(device, "fluid.h", &FluidU::zeroed());
         let fluid_v = gpu::uniform_buffer(device, "fluid.v", &FluidU::zeroed());
 
         // ---- sparks & embers: additive light, depth-tested, no depth writes
         let spark_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("sparks.draw.layout"),
-            entries: &[gpu::uniform(0, vf), gpu::uniform(1, vf), gpu::storage(2, true, wgpu::ShaderStages::VERTEX)],
+            entries: &[
+                gpu::uniform(0, vf),
+                gpu::uniform(1, vf),
+                gpu::storage(2, true, wgpu::ShaderStages::VERTEX),
+            ],
         });
         let spark_pl = layout(&spark_layout);
-        let spark_mod = gpu::shader(device, "sparks_draw.wgsl", include_str!("shaders/sparks_draw.wgsl"));
-        let spark_pipe = pipe("sparks.draw", &spark_pl, &spark_mod, "vs_main", "fs_main", COLOR_FORMAT, depth_write(false), additive);
+        let spark_mod = gpu::shader(
+            device,
+            "sparks_draw.wgsl",
+            include_str!("shaders/sparks_draw.wgsl"),
+        );
+        let spark_pipe = pipe(
+            "sparks.draw",
+            &spark_pl,
+            &spark_mod,
+            "vs_main",
+            "fs_main",
+            COLOR_FORMAT,
+            depth_write(false),
+            additive,
+        );
         let spark_style = gpu::uniform_buffer(device, "sparks.style", &SparkStyleU::zeroed());
+
+        // ---- ocean surface + sky background
+        let ocean_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ocean.layout"),
+            entries: &[gpu::uniform(0, vf), gpu::uniform(1, vf)],
+        });
+        let ocean_pl = layout(&ocean_layout);
+        let ocean_mod = gpu::shader(
+            device,
+            "ocean.wgsl",
+            &with_sky(include_str!("shaders/ocean.wgsl")),
+        );
+        let ocean_pipe = pipe(
+            "ocean",
+            &ocean_pl,
+            &ocean_mod,
+            "vs_main",
+            "fs_main",
+            COLOR_FORMAT,
+            depth_write(true),
+            premul_blend(),
+        );
+        let sky_pipe = pipe(
+            "sky",
+            &ocean_pl,
+            &ocean_mod,
+            "vs_sky",
+            "fs_sky",
+            COLOR_FORMAT,
+            depth_write(false),
+            None,
+        );
+        let ocean_buf = crate::ocean::uniform_buffer(device);
+        let (ocean_idx, ocean_count) = crate::ocean::index_buffer(device);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("volume.sampler"),
@@ -420,7 +626,11 @@ impl Renderer {
             queue,
             &wgpu::TextureDescriptor {
                 label: Some("dummy.volume"),
-                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D3,
@@ -454,6 +664,12 @@ impl Renderer {
             spark_layout,
             spark_pipe,
             spark_style,
+            ocean_layout,
+            ocean_pipe,
+            sky_pipe,
+            ocean_buf,
+            ocean_idx,
+            ocean_count,
             sampler,
             dummy_volume: dummy.create_view(&Default::default()),
             dummy_storage,
@@ -478,7 +694,11 @@ impl Renderer {
         let aspect = target.width as f32 / target.height as f32;
         let cm = camera_math(&scene.camera, aspect);
         let ld = Vec3::from(r.light_dir).normalize_or(Vec3::Y);
-        let bg = if r.transparent_background { [0.0; 4] } else { [r.background[0], r.background[1], r.background[2], 1.0] };
+        let bg = if r.transparent_background {
+            [0.0; 4]
+        } else {
+            [r.background[0], r.background[1], r.background[2], 1.0]
+        };
         let cu = CameraU {
             view_proj: cm.view_proj.to_cols_array_2d(),
             inv_view_proj: cm.view_proj.inverse().to_cols_array_2d(),
@@ -486,7 +706,12 @@ impl Renderer {
             cam_right: cm.right.extend(0.0).into(),
             cam_up: cm.up.extend(0.0).into(),
             light_dir: [ld.x, ld.y, ld.z, r.exposure],
-            viewport: [target.width as f32, target.height as f32, self.time, if r.transparent_background { 1.0 } else { 0.0 }],
+            viewport: [
+                target.width as f32,
+                target.height as f32,
+                self.time,
+                if r.transparent_background { 1.0 } else { 0.0 },
+            ],
             bg_color: bg,
         };
         queue.write_buffer(&self.cam_buf, 0, bytemuck::bytes_of(&cu));
@@ -497,19 +722,49 @@ impl Renderer {
         let vu = VolU {
             box_min: smin.extend(sp.step_scale.clamp(0.25, 4.0)).into(),
             box_max: smax.extend(sp.max_steps.clamp(16, 512) as f32).into(),
-            smoke_color: [sp.smoke_color[0], sp.smoke_color[1], sp.smoke_color[2], sp.smoke_absorption],
-            fire: [sp.flame_intensity, sp.temperature_scale, sp.self_illumination, sp.shadow_density],
+            smoke_color: [
+                sp.smoke_color[0],
+                sp.smoke_color[1],
+                sp.smoke_color[2],
+                sp.smoke_absorption,
+            ],
+            fire: [
+                sp.flame_intensity,
+                sp.temperature_scale,
+                sp.self_illumination,
+                sp.shadow_density,
+            ],
             ambient: [0.12, 0.13, 0.16, sp.fuel_glow],
-            detail: [sp.flame_detail.clamp(0.0, 1.0), sp.detail_scale.max(0.1), sp.detail_speed, sim_time],
+            detail: [
+                sp.flame_detail.clamp(0.0, 1.0),
+                sp.detail_scale.max(0.1),
+                sp.detail_speed,
+                sim_time,
+            ],
         };
         queue.write_buffer(&self.vol_buf, 0, bytemuck::bytes_of(&vu));
 
         let wp = &scene.water;
         let su = StyleU {
             box_min: [wp.box_min[0], wp.box_min[1], wp.box_min[2], wp.cell_size],
-            deep: [wp.deep_color[0], wp.deep_color[1], wp.deep_color[2], wp.particle_size],
-            shallow: [wp.shallow_color[0], wp.shallow_color[1], wp.shallow_color[2], wp.spray_size],
-            foam: [wp.foam_color[0], wp.foam_color[1], wp.foam_color[2], wp.foam_strength],
+            deep: [
+                wp.deep_color[0],
+                wp.deep_color[1],
+                wp.deep_color[2],
+                wp.particle_size,
+            ],
+            shallow: [
+                wp.shallow_color[0],
+                wp.shallow_color[1],
+                wp.shallow_color[2],
+                wp.spray_size,
+            ],
+            foam: [
+                wp.foam_color[0],
+                wp.foam_color[1],
+                wp.foam_color[2],
+                wp.foam_strength,
+            ],
         };
         queue.write_buffer(&self.style_buf, 0, bytemuck::bytes_of(&su));
 
@@ -521,7 +776,9 @@ impl Renderer {
             }
             if water.is_some() {
                 let wmin = Vec3::from(wp.box_min);
-                let wmax = wmin + Vec3::new(wp.res[0] as f32, wp.res[1] as f32, wp.res[2] as f32) * wp.cell_size;
+                let wmax = wmin
+                    + Vec3::new(wp.res[0] as f32, wp.res[1] as f32, wp.res[2] as f32)
+                        * wp.cell_size;
                 push_box(&mut lines, wmin, wmax, [0.25, 0.65, 1.0, 0.55]);
             }
         }
@@ -536,17 +793,32 @@ impl Renderer {
         let scene_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.scene_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: self.cam_buf.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.cam_buf.as_entire_binding(),
+            }],
         });
         let part_bind = water.map(|w| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.part_layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: self.cam_buf.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: self.style_buf.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: w.particles.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: w.spray.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.cam_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.style_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: w.particles.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: w.spray.as_entire_binding(),
+                    },
                 ],
             })
         });
@@ -556,15 +828,57 @@ impl Renderer {
             label: None,
             layout: &self.vol_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.cam_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: self.vol_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(vol_view) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&target.depth_view) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.cam_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.vol_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(vol_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&target.depth_view),
+                },
             ],
         });
 
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("render") });
+        let draw_sky = r.sky_background && !r.transparent_background;
+        let draw_ocean = scene.ocean.enabled;
+        let ocean_bind = (draw_sky || draw_ocean).then(|| {
+            let pixel =
+                2.0 * (scene.camera.fov_deg.to_radians() * 0.5).tan() / target.height as f32;
+            queue.write_buffer(
+                &self.ocean_buf,
+                0,
+                bytemuck::bytes_of(&crate::ocean::uniforms(&scene.ocean, sim_time, pixel)),
+            );
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.ocean_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.cam_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.ocean_buf.as_entire_binding(),
+                    },
+                ],
+            })
+        });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("render"),
+        });
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque"),
@@ -573,23 +887,42 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: bg[0] as f64, g: bg[1] as f64, b: bg[2] as f64, a: bg[3] as f64 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: bg[0] as f64,
+                            g: bg[1] as f64,
+                            b: bg[2] as f64,
+                            a: bg[3] as f64,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &target.depth_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            if let (true, Some(ob)) = (draw_sky, &ocean_bind) {
+                pass.set_pipeline(&self.sky_pipe);
+                pass.set_bind_group(0, ob, &[]);
+                pass.draw(0..3, 0..1);
+            }
             if r.show_ground && !(hide_helpers && r.transparent_background) {
                 pass.set_pipeline(&self.ground);
                 pass.set_bind_group(0, &scene_bind, &[]);
                 pass.draw(0..6, 0..1);
+            }
+            if let (true, Some(ob)) = (draw_ocean, &ocean_bind) {
+                pass.set_pipeline(&self.ocean_pipe);
+                pass.set_bind_group(0, ob, &[]);
+                pass.set_index_buffer(self.ocean_idx.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..self.ocean_count, 0, 0..1);
             }
             if let (Some(w), Some(b)) = (water, &part_bind) {
                 pass.set_bind_group(0, b, &[]);
@@ -611,7 +944,7 @@ impl Renderer {
         }
         if let (Some(w), Some(pb)) = (water, &part_bind) {
             if w.count > 0 && wp.look == WaterLook::Surface {
-                self.fluid_passes(device, queue, &mut enc, target, scene, w, pb);
+                self.fluid_passes(device, queue, &mut enc, target, scene, w, pb, sim_time);
             }
         }
         if smoke.is_some() {
@@ -621,7 +954,10 @@ impl Renderer {
                     view: &target.color_view,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -634,12 +970,33 @@ impl Renderer {
         }
         if let Some(k) = sparks {
             let kp = &scene.sparks;
-            let px_per_unit = target.height as f32 / (2.0 * (scene.camera.fov_deg.to_radians() * 0.5).tan());
+            let px_per_unit =
+                target.height as f32 / (2.0 * (scene.camera.fov_deg.to_radians() * 0.5).tan());
             let st = SparkStyleU {
-                spark_hot: [kp.spark_hot_color[0], kp.spark_hot_color[1], kp.spark_hot_color[2], kp.spark_brightness],
-                spark_cool: [kp.spark_cool_color[0], kp.spark_cool_color[1], kp.spark_cool_color[2], kp.spark_streak.max(0.0)],
-                ember_hot: [kp.ember_hot_color[0], kp.ember_hot_color[1], kp.ember_hot_color[2], kp.ember_brightness],
-                ember_cool: [kp.ember_cool_color[0], kp.ember_cool_color[1], kp.ember_cool_color[2], kp.ember_flicker],
+                spark_hot: [
+                    kp.spark_hot_color[0],
+                    kp.spark_hot_color[1],
+                    kp.spark_hot_color[2],
+                    kp.spark_brightness,
+                ],
+                spark_cool: [
+                    kp.spark_cool_color[0],
+                    kp.spark_cool_color[1],
+                    kp.spark_cool_color[2],
+                    kp.spark_streak.max(0.0),
+                ],
+                ember_hot: [
+                    kp.ember_hot_color[0],
+                    kp.ember_hot_color[1],
+                    kp.ember_hot_color[2],
+                    kp.ember_brightness,
+                ],
+                ember_cool: [
+                    kp.ember_cool_color[0],
+                    kp.ember_cool_color[1],
+                    kp.ember_cool_color[2],
+                    kp.ember_flicker,
+                ],
                 size: [kp.spark_size, kp.ember_size, px_per_unit, sim_time],
             };
             queue.write_buffer(&self.spark_style, 0, bytemuck::bytes_of(&st));
@@ -647,9 +1004,18 @@ impl Renderer {
                 label: None,
                 layout: &self.spark_layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: self.cam_buf.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: self.spark_style.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: k.parts.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.cam_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.spark_style.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: k.parts.as_entire_binding(),
+                    },
                 ],
             });
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -658,11 +1024,17 @@ impl Renderer {
                     view: &target.color_view,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &target.depth_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -688,22 +1060,47 @@ impl Renderer {
         scene: &Scene,
         w: &WaterSim,
         part_bind: &wgpu::BindGroup,
+        sim_time: f32,
     ) {
         let wp = &scene.water;
         let radius = wp.cell_size * 0.5 * wp.particle_size;
-        let px_per_unit = target.height as f32 / (2.0 * (scene.camera.fov_deg.to_radians() * 0.5).tan());
+        let px_per_unit =
+            target.height as f32 / (2.0 * (scene.camera.fov_deg.to_radians() * 0.5).tan());
         let make = |dir: [f32; 2]| FluidU {
-            blur: [radius, px_per_unit * wp.smoothing_radius, wp.smoothing_depth, 40.0],
-            dir: [dir[0], dir[1], 0.0, 0.0],
-            shade: [wp.refraction, wp.absorption, wp.thickness_scale, wp.foam_strength],
-            deep: [wp.deep_color[0], wp.deep_color[1], wp.deep_color[2], 0.0],
-            shallow: [wp.shallow_color[0], wp.shallow_color[1], wp.shallow_color[2], 0.0],
+            blur: [
+                radius,
+                px_per_unit * wp.smoothing_radius,
+                wp.smoothing_depth,
+                40.0,
+            ],
+            dir: [dir[0], dir[1], sim_time, 0.0],
+            shade: [
+                wp.refraction,
+                wp.absorption,
+                wp.thickness_scale,
+                wp.foam_strength,
+            ],
+            deep: [
+                wp.deep_color[0],
+                wp.deep_color[1],
+                wp.deep_color[2],
+                wp.ripple_strength,
+            ],
+            shallow: [
+                wp.shallow_color[0],
+                wp.shallow_color[1],
+                wp.shallow_color[2],
+                wp.ripple_scale,
+            ],
             foam: [wp.foam_color[0], wp.foam_color[1], wp.foam_color[2], 0.0],
         };
         queue.write_buffer(&self.fluid_h, 0, bytemuck::bytes_of(&make([1.0, 0.0])));
         queue.write_buffer(&self.fluid_v, 0, bytemuck::bytes_of(&make([0.0, 1.0])));
 
-        fn color_att(view: &wgpu::TextureView, clear: Option<wgpu::Color>) -> Option<wgpu::RenderPassColorAttachment<'_>> {
+        fn color_att(
+            view: &wgpu::TextureView,
+            clear: Option<wgpu::Color>,
+        ) -> Option<wgpu::RenderPassColorAttachment<'_>> {
             Some(wgpu::RenderPassColorAttachment {
                 view,
                 depth_slice: None,
@@ -714,7 +1111,12 @@ impl Renderer {
                 },
             })
         }
-        let none = wgpu::Color { r: NO_WATER, g: NO_WATER, b: NO_WATER, a: NO_WATER };
+        let none = wgpu::Color {
+            r: NO_WATER,
+            g: NO_WATER,
+            b: NO_WATER,
+            a: NO_WATER,
+        };
 
         // 1. nearest-sphere eye depth
         {
@@ -723,7 +1125,10 @@ impl Renderer {
                 color_attachments: &[color_att(&target.fluid_a, Some(none))],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &target.fluid_z,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -741,7 +1146,10 @@ impl Renderer {
                 color_attachments: &[color_att(&target.thick, Some(wgpu::Color::TRANSPARENT))],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &target.depth_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -756,7 +1164,11 @@ impl Renderer {
         enc.copy_texture_to_texture(
             target.color.as_image_copy(),
             target.scene_copy.as_image_copy(),
-            wgpu::Extent3d { width: target.width, height: target.height, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: target.width,
+                height: target.height,
+                depth_or_array_layers: 1,
+            },
         );
 
         let bind = |depth: &wgpu::TextureView, u: &wgpu::Buffer| {
@@ -764,12 +1176,30 @@ impl Renderer {
                 label: None,
                 layout: &self.fluid_layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: self.cam_buf.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: u.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(depth) },
-                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&target.thick) },
-                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&target.scene_copy_view) },
-                    wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.cam_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: u.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(depth),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&target.thick),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&target.scene_copy_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
                 ],
             })
         };
@@ -798,7 +1228,10 @@ impl Renderer {
             color_attachments: &[color_att(&target.color_view, None)],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &target.depth_view,
-                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
                 stencil_ops: None,
             }),
             timestamp_writes: None,
@@ -811,16 +1244,42 @@ impl Renderer {
     }
 }
 
+/// Prepends the shared sky/sun/ripple functions to a shader's source.
+pub fn with_sky(src: &str) -> String {
+    format!("{}\n{}", include_str!("shaders/sky.wgsl"), src)
+}
+
 fn push_box(out: &mut Vec<LineV>, a: Vec3, b: Vec3, color: [f32; 4]) {
-    let c = |x: bool, y: bool, z: bool| [if x { b.x } else { a.x }, if y { b.y } else { a.y }, if z { b.z } else { a.z }];
+    let c = |x: bool, y: bool, z: bool| {
+        [
+            if x { b.x } else { a.x },
+            if y { b.y } else { a.y },
+            if z { b.z } else { a.z },
+        ]
+    };
     let edges = [
-        ((0, 0, 0), (1, 0, 0)), ((0, 1, 0), (1, 1, 0)), ((0, 0, 1), (1, 0, 1)), ((0, 1, 1), (1, 1, 1)),
-        ((0, 0, 0), (0, 1, 0)), ((1, 0, 0), (1, 1, 0)), ((0, 0, 1), (0, 1, 1)), ((1, 0, 1), (1, 1, 1)),
-        ((0, 0, 0), (0, 0, 1)), ((1, 0, 0), (1, 0, 1)), ((0, 1, 0), (0, 1, 1)), ((1, 1, 0), (1, 1, 1)),
+        ((0, 0, 0), (1, 0, 0)),
+        ((0, 1, 0), (1, 1, 0)),
+        ((0, 0, 1), (1, 0, 1)),
+        ((0, 1, 1), (1, 1, 1)),
+        ((0, 0, 0), (0, 1, 0)),
+        ((1, 0, 0), (1, 1, 0)),
+        ((0, 0, 1), (0, 1, 1)),
+        ((1, 0, 1), (1, 1, 1)),
+        ((0, 0, 0), (0, 0, 1)),
+        ((1, 0, 0), (1, 0, 1)),
+        ((0, 1, 0), (0, 1, 1)),
+        ((1, 1, 0), (1, 1, 1)),
     ];
     for ((x0, y0, z0), (x1, y1, z1)) in edges {
-        out.push(LineV { pos: c(x0 == 1, y0 == 1, z0 == 1), color });
-        out.push(LineV { pos: c(x1 == 1, y1 == 1, z1 == 1), color });
+        out.push(LineV {
+            pos: c(x0 == 1, y0 == 1, z0 == 1),
+            color,
+        });
+        out.push(LineV {
+            pos: c(x1 == 1, y1 == 1, z1 == 1),
+            color,
+        });
     }
 }
 
@@ -873,7 +1332,12 @@ impl Presenter {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("present"),
             layout: Some(&pl),
-            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
             primitive: Default::default(),
             depth_stencil: None,
             multisample: Default::default(),
@@ -881,7 +1345,11 @@ impl Presenter {
                 module: &module,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
             multiview_mask: None,
             cache: None,
@@ -893,24 +1361,55 @@ impl Presenter {
             ..Default::default()
         });
         let ubuf = gpu::uniform_buffer(device, "present.params", &PresentU::zeroed());
-        Self { pipeline, layout, sampler, ubuf, format }
+        Self {
+            pipeline,
+            layout,
+            sampler,
+            ubuf,
+            format,
+        }
     }
 
     /// Draws `src` over the whole of `dst`. `checker` shows a checkerboard
     /// where the frame is transparent.
-    pub fn present(&self, device: &wgpu::Device, queue: &wgpu::Queue, src: &RenderTarget, dst: &wgpu::TextureView, checker: bool) {
-        let u = PresentU { flags: [if self.format.is_srgb() { 0.0 } else { 1.0 }, if checker { 1.0 } else { 0.0 }, 0.0, 0.0] };
+    pub fn present(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        src: &RenderTarget,
+        dst: &wgpu::TextureView,
+        checker: bool,
+    ) {
+        let u = PresentU {
+            flags: [
+                if self.format.is_srgb() { 0.0 } else { 1.0 },
+                if checker { 1.0 } else { 0.0 },
+                0.0,
+                0.0,
+            ],
+        };
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
         let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.ubuf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&src.color_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.ubuf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&src.color_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         });
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("present") });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("present"),
+        });
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("present"),
@@ -918,7 +1417,10 @@ impl Presenter {
                     view: dst,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,

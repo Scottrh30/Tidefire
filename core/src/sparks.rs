@@ -55,13 +55,22 @@ const PARTICLE_BYTES: u64 = 48;
 impl SparkSim {
     pub fn new(device: &wgpu::Device, p: &SparkParams) -> Self {
         let max = p.max_particles.clamp(256, 2_000_000);
-        let parts = gpu::buffer(device, "sparks.parts", max as u64 * PARTICLE_BYTES, gpu::STORAGE);
+        let parts = gpu::buffer(
+            device,
+            "sparks.parts",
+            max as u64 * PARTICLE_BYTES,
+            gpu::STORAGE,
+        );
         let ubuf = gpu::uniform_buffer(device, "sparks.params", &SparkU::zeroed());
         let dummy_vel = gpu::buffer(device, "sparks.no_smoke", 64, gpu::STORAGE);
         let cs = wgpu::ShaderStages::COMPUTE;
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("sparks.layout"),
-            entries: &[gpu::uniform(0, cs), gpu::storage(1, false, cs), gpu::storage(2, true, cs)],
+            entries: &[
+                gpu::uniform(0, cs),
+                gpu::storage(1, false, cs),
+                gpu::storage(2, true, cs),
+            ],
         });
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sparks.pl"),
@@ -93,9 +102,18 @@ impl SparkSim {
             label: Some("sparks.bind"),
             layout: &self.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.ubuf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: self.parts.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: vel.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.ubuf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.parts.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: vel.as_entire_binding(),
+                },
             ],
         })
     }
@@ -107,7 +125,10 @@ impl SparkSim {
         self.burst_timer = 0.25;
         self.rng = Rng(0xC0FFEE1234567);
         self.step_index = 0;
-        let u = SparkU { emit: [0, 0, 0, self.max], ..SparkU::zeroed() };
+        let u = SparkU {
+            emit: [0, 0, 0, self.max],
+            ..SparkU::zeroed()
+        };
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
         let bind = self.bind(device, None);
         let mut enc = device.create_command_encoder(&Default::default());
@@ -138,7 +159,8 @@ impl SparkSim {
         };
         let mut emitting = p.duration <= 0.0 || time < p.duration;
         if let Some(sp) = fire {
-            emitting &= sp.emitter_on && (sp.emitter_duration <= 0.0 || time < sp.emitter_duration + 0.3);
+            emitting &=
+                sp.emitter_on && (sp.emitter_duration <= 0.0 || time < sp.emitter_duration + 0.3);
         }
 
         let mut n_spark = 0u32;
@@ -168,7 +190,11 @@ impl SparkSim {
 
         let dir = Vec3::from(p.spark_direction).normalize_or(Vec3::Y);
         let (smoke_min, smoke_res, has_smoke) = match smoke {
-            Some((s, sp)) => ([sp.box_min[0], sp.box_min[1], sp.box_min[2], sp.cell_size], s.res, 1.0),
+            Some((s, sp)) => (
+                [sp.box_min[0], sp.box_min[1], sp.box_min[2], sp.cell_size],
+                s.res,
+                1.0,
+            ),
             None => ([0.0; 4], [1, 1, 1], 0.0),
         };
         self.step_index = self.step_index.wrapping_add(1);
@@ -176,19 +202,49 @@ impl SparkSim {
             emit: [self.next_slot, n_spark, n_ember, self.max],
             misc: [dt, time, 0.0, has_smoke],
             emitter: [pos.x, pos.y, pos.z, radius.max(0.0)],
-            spark_dir: [dir.x, dir.y, dir.z, p.spark_spread.clamp(0.0, 180.0).to_radians()],
-            spark: [p.spark_speed, p.spark_speed_variation.clamp(0.0, 1.0), p.spark_lifetime.max(0.01), p.spark_gravity],
-            spark2: [p.spark_drag.max(0.0), p.spark_bounce.clamp(0.0, 1.0), p.spark_follow_smoke.clamp(0.0, 1.0), 0.6],
-            ember: [p.ember_lifetime.max(0.01), p.ember_buoyancy, p.ember_follow_smoke.clamp(0.0, 1.0), p.ember_turbulence.max(0.0)],
+            spark_dir: [
+                dir.x,
+                dir.y,
+                dir.z,
+                p.spark_spread.clamp(0.0, 180.0).to_radians(),
+            ],
+            spark: [
+                p.spark_speed,
+                p.spark_speed_variation.clamp(0.0, 1.0),
+                p.spark_lifetime.max(0.01),
+                p.spark_gravity,
+            ],
+            spark2: [
+                p.spark_drag.max(0.0),
+                p.spark_bounce.clamp(0.0, 1.0),
+                p.spark_follow_smoke.clamp(0.0, 1.0),
+                0.6,
+            ],
+            ember: [
+                p.ember_lifetime.max(0.01),
+                p.ember_buoyancy,
+                p.ember_follow_smoke.clamp(0.0, 1.0),
+                p.ember_turbulence.max(0.0),
+            ],
             ember2: [p.ember_launch, 0.0, 0.0, 0.0],
             smoke_min,
-            smoke_res: [smoke_res[0], smoke_res[1], smoke_res[2], self.step_index.wrapping_mul(0x9E3779B9)],
+            smoke_res: [
+                smoke_res[0],
+                smoke_res[1],
+                smoke_res[2],
+                self.step_index.wrapping_mul(0x9E3779B9),
+            ],
         };
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
         let bind = self.bind(device, smoke.map(|(s, _)| s));
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("sparks.step") });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("sparks.step"),
+        });
         {
-            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("sparks"), timestamp_writes: None });
+            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("sparks"),
+                timestamp_writes: None,
+            });
             pass.set_bind_group(0, &bind, &[]);
             let n = n_spark + n_ember;
             if n > 0 {

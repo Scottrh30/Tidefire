@@ -5,7 +5,9 @@ use crate::fields::{Choice, Fold, Hint, Section, Slider, Vec3Field};
 use crate::state::Ui;
 use crate::{color, number, slider, switch, vec3};
 use leptos::prelude::*;
-use tidefire_core::params::{SPARK_PRESETS, SparkParams, Transfer, WaterBlock, WaterJet, WaterLook};
+use tidefire_core::params::{
+    SPARK_PRESETS, SparkParams, Transfer, WaterBlock, WaterJet, WaterLook,
+};
 
 #[component]
 pub fn Panels(ui: Ui) -> impl IntoView {
@@ -16,6 +18,7 @@ pub fn Panels(ui: Ui) -> impl IntoView {
             <Fire ui=ui />
             <Sparks ui=ui />
             <Water ui=ui />
+            <Ocean ui=ui />
             <Render ui=ui />
             <Camera ui=ui />
         </aside>
@@ -229,6 +232,8 @@ fn Water(ui: Ui) -> impl IntoView {
                     {slider!(ui, "Foam strength", 0, 2, water.foam_strength)}
                     {slider!(ui, "Particle size", 0.3, 3.0, water.particle_size)}
                     {slider!(ui, "Spray size", 0.1, 2.0, water.spray_size)}
+                    {slider!(ui, "Ripples", 0, 0.15, water.ripple_strength)}
+                    {slider!(ui, "Ripple scale", 1, 20, water.ripple_scale)}
                 </Fold>
             </div>
         </Section>
@@ -240,22 +245,51 @@ fn Water(ui: Ui) -> impl IntoView {
 fn Sources(ui: Ui) -> impl IntoView {
     let blocks = move || (0..ui.scene.with(|s| s.water.blocks.len())).collect::<Vec<_>>();
     let jets = move || (0..ui.scene.with(|s| s.water.jets.len())).collect::<Vec<_>>();
-    let block_vec = move |i: usize, f: fn(&WaterBlock) -> [f32; 3], set: fn(&mut WaterBlock, [f32; 3])| {
-        (
-            Signal::derive(move || ui.scene.with(|s| s.water.blocks.get(i).map(f).unwrap_or_default())),
-            Callback::new(move |v| ui.edit(|s| if let Some(b) = s.water.blocks.get_mut(i) { set(b, v) })),
-        )
-    };
-    let jet_vec = move |i: usize, f: fn(&WaterJet) -> [f32; 3], set: fn(&mut WaterJet, [f32; 3])| {
-        (
-            Signal::derive(move || ui.scene.with(|s| s.water.jets.get(i).map(f).unwrap_or_default())),
-            Callback::new(move |v| ui.edit(|s| if let Some(j) = s.water.jets.get_mut(i) { set(j, v) })),
-        )
-    };
+    let block_vec =
+        move |i: usize, f: fn(&WaterBlock) -> [f32; 3], set: fn(&mut WaterBlock, [f32; 3])| {
+            (
+                Signal::derive(move || {
+                    ui.scene
+                        .with(|s| s.water.blocks.get(i).map(f).unwrap_or_default())
+                }),
+                Callback::new(move |v| {
+                    ui.edit(|s| {
+                        if let Some(b) = s.water.blocks.get_mut(i) {
+                            set(b, v)
+                        }
+                    })
+                }),
+            )
+        };
+    let jet_vec =
+        move |i: usize, f: fn(&WaterJet) -> [f32; 3], set: fn(&mut WaterJet, [f32; 3])| {
+            (
+                Signal::derive(move || {
+                    ui.scene
+                        .with(|s| s.water.jets.get(i).map(f).unwrap_or_default())
+                }),
+                Callback::new(move |v| {
+                    ui.edit(|s| {
+                        if let Some(j) = s.water.jets.get_mut(i) {
+                            set(j, v)
+                        }
+                    })
+                }),
+            )
+        };
     let jet_f = move |i: usize, f: fn(&WaterJet) -> f32, set: fn(&mut WaterJet, f32)| {
         (
-            Signal::derive(move || ui.scene.with(|s| s.water.jets.get(i).map(f).unwrap_or_default())),
-            Callback::new(move |v| ui.edit(|s| if let Some(j) = s.water.jets.get_mut(i) { set(j, v) })),
+            Signal::derive(move || {
+                ui.scene
+                    .with(|s| s.water.jets.get(i).map(f).unwrap_or_default())
+            }),
+            Callback::new(move |v| {
+                ui.edit(|s| {
+                    if let Some(j) = s.water.jets.get_mut(i) {
+                        set(j, v)
+                    }
+                })
+            }),
         )
     };
     view! {
@@ -309,12 +343,46 @@ fn Sources(ui: Ui) -> impl IntoView {
 }
 
 #[component]
+fn Ocean(ui: Ui) -> impl IntoView {
+    let on = Signal::derive(move || ui.scene.with(|s| s.ocean.enabled));
+    view! {
+        <Section title="Ocean" key="ocean" accent="#2bb3c0" open=false>
+            {switch!(ui, "Enabled", ocean.enabled)}
+            <div class="group" class:off=move || !on.get()>
+                <Fold title="Waves" key="ocean.waves" open=true>
+                    {slider!(ui, "Sea level", -5, 5, ocean.level, unit = " m")}
+                    {slider!(ui, "Wave height", 0, 4, ocean.wave_height, unit = " m")}
+                    {slider!(ui, "Wavelength", 0.5, 40, ocean.wavelength, unit = " m")}
+                    {slider!(ui, "Wind direction", 0, 360, ocean.wind_direction, unit = "\u{b0}")}
+                    {slider!(ui, "Spread", 0, 2, ocean.spread)}
+                    {slider!(ui, "Choppiness", 0, 1, ocean.choppiness)}
+                    {slider!(ui, "Speed", 0, 3, ocean.speed)}
+                </Fold>
+                <Fold title="Detail" key="ocean.detail">
+                    {slider!(ui, "Wind chop", 0, 1, ocean.chop)}
+                    {slider!(ui, "Ripples", 0, 0.3, ocean.ripples)}
+                    {slider!(ui, "Ripple scale", 0.5, 10, ocean.ripple_scale)}
+                    {slider!(ui, "Whitecaps", 0, 1, ocean.whitecaps)}
+                </Fold>
+                <Fold title="Shading" key="ocean.shading">
+                    {color!(ui, "Deep colour", ocean.deep_color)}
+                    {color!(ui, "Crest glow", ocean.scatter_color)}
+                    {color!(ui, "Foam colour", ocean.foam_color)}
+                    {slider!(ui, "Haze distance", 50, 3000, ocean.haze_distance, unit = " m")}
+                </Fold>
+            </div>
+        </Section>
+    }
+}
+
+#[component]
 fn Render(ui: Ui) -> impl IntoView {
     view! {
         <Section title="Render" key="render" open=false>
             {slider!(ui, "Exposure", 0.1, 4.0, render.exposure)}
             {vec3!(ui, "Light direction", render.light_dir)}
             {color!(ui, "Background", render.background)}
+            {switch!(ui, "Sky background", render.sky_background)}
             {switch!(ui, "Transparent background", render.transparent_background)}
             {switch!(ui, "Ground", render.show_ground)}
             {switch!(ui, "Domain boxes", render.show_bounds)}

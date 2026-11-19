@@ -54,7 +54,9 @@ async fn init_gpu(canvas: web_sys::HtmlCanvasElement, ui: Ui) -> Result<Gpu, Str
     desc.backends = wgpu::Backends::BROWSER_WEBGPU;
     let instance = wgpu::util::new_instance_with_webgpu_detection(desc).await;
     #[cfg(target_arch = "wasm32")]
-    let surface = instance.create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone())).map_err(|e| e.to_string())?;
+    let surface = instance
+        .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
+        .map_err(|e| e.to_string())?;
     #[cfg(not(target_arch = "wasm32"))]
     let surface: wgpu::Surface<'static> = {
         let _ = (&canvas, &instance);
@@ -71,7 +73,11 @@ async fn init_gpu(canvas: web_sys::HtmlCanvasElement, ui: Ui) -> Result<Gpu, Str
         .map_err(|e| format!("no WebGPU adapter: {e}"))?;
     let info = adapter.get_info();
     let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor { label: Some("tidefire"), required_limits: adapter.limits(), ..Default::default() })
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some("tidefire"),
+            required_limits: adapter.limits(),
+            ..Default::default()
+        })
         .await
         .map_err(|e| format!("could not open the GPU: {e}"))?;
     device.on_uncaptured_error(std::sync::Arc::new(|e| {
@@ -99,7 +105,14 @@ async fn init_gpu(canvas: web_sys::HtmlCanvasElement, ui: Ui) -> Result<Gpu, Str
     surface.configure(&device, &config);
     let presenter = Presenter::new(&device, format);
     let engine = Engine::new(device, queue, ui.scene.get_untracked());
-    let adapter = info.name.split(" (").next().unwrap_or(&info.name).chars().take(48).collect::<String>();
+    let adapter = info
+        .name
+        .split(" (")
+        .next()
+        .unwrap_or(&info.name)
+        .chars()
+        .take(48)
+        .collect::<String>();
     Ok(Gpu {
         surface,
         config,
@@ -112,12 +125,18 @@ async fn init_gpu(canvas: web_sys::HtmlCanvasElement, ui: Ui) -> Result<Gpu, Str
         drawn_rev: 0,
         last_step_ms: 0.0,
         fps: 0.0,
-        adapter: if adapter.is_empty() { "WebGPU".into() } else { adapter },
+        adapter: if adapter.is_empty() {
+            "WebGPU".into()
+        } else {
+            adapter
+        },
     })
 }
 
 fn frame(ui: Ui, canvas: web_sys::HtmlCanvasElement) {
-    let dpr = web_sys::window().map(|w| w.device_pixel_ratio()).unwrap_or(1.0);
+    let dpr = web_sys::window()
+        .map(|w| w.device_pixel_ratio())
+        .unwrap_or(1.0);
     let pw = ((canvas.client_width() as f64) * dpr).round().max(8.0) as u32;
     let ph = ((canvas.client_height() as f64) * dpr).round().max(8.0) as u32;
     GPU.with_borrow_mut(|g| {
@@ -135,14 +154,23 @@ fn frame(ui: Ui, canvas: web_sys::HtmlCanvasElement) {
             changed = true;
         }
         let step = ui.step_rev.get_untracked();
-        if !ui.export.running.get_untracked() && (ui.playing.get_untracked() || step != g.applied_step) {
+        if !ui.export.running.get_untracked()
+            && (ui.playing.get_untracked() || step != g.applied_step)
+        {
             g.engine.step_frame();
             changed = true;
-            let now = web_sys::window().and_then(|w| w.performance()).map(|p| p.now()).unwrap_or(0.0);
+            let now = web_sys::window()
+                .and_then(|w| w.performance())
+                .map(|p| p.now())
+                .unwrap_or(0.0);
             let dt = now - g.last_step_ms;
             if g.last_step_ms > 0.0 && dt > 0.0 && dt < 1000.0 {
                 let inst = (1000.0 / dt) as f32;
-                g.fps = if g.fps == 0.0 { inst } else { g.fps * 0.9 + inst * 0.1 };
+                g.fps = if g.fps == 0.0 {
+                    inst
+                } else {
+                    g.fps * 0.9 + inst * 0.1
+                };
             }
             g.last_step_ms = now;
         } else {
@@ -164,13 +192,17 @@ fn frame(ui: Ui, canvas: web_sys::HtmlCanvasElement) {
             g.config.height = ph;
             g.surface.configure(&g.engine.device, &g.config);
         }
-        if g.target.as_ref().is_none_or(|t| t.width != pw || t.height != ph) {
+        if g.target
+            .as_ref()
+            .is_none_or(|t| t.width != pw || t.height != ph)
+        {
             g.target = Some(RenderTarget::new(&g.engine.device, pw, ph));
         }
         let target = g.target.as_ref().unwrap();
         g.engine.render(target, false);
         let out = match g.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+            wgpu::CurrentSurfaceTexture::Success(f)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             _ => {
                 g.surface.configure(&g.engine.device, &g.config);
                 return;
@@ -178,7 +210,8 @@ fn frame(ui: Ui, canvas: web_sys::HtmlCanvasElement) {
         };
         let view = out.texture.create_view(&Default::default());
         let checker = g.engine.scene.render.transparent_background;
-        g.presenter.present(&g.engine.device, &g.engine.queue, target, &view, checker);
+        g.presenter
+            .present(&g.engine.device, &g.engine.queue, target, &view, checker);
         g.engine.queue.present(out);
 
         let stats = Stats {
@@ -208,7 +241,9 @@ pub fn Viewport(ui: Ui) -> impl IntoView {
     let started = StoredValue::new(false);
 
     Effect::new(move |_| {
-        let Some(canvas) = canvas_ref.get() else { return };
+        let Some(canvas) = canvas_ref.get() else {
+            return;
+        };
         if started.get_value() {
             return;
         }
@@ -234,14 +269,19 @@ pub fn Viewport(ui: Ui) -> impl IntoView {
             1 | 2 => Drag::Pan,
             _ => return,
         };
-        if let Some(t) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
+        if let Some(t) = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        {
             let _ = t.set_pointer_capture(ev.pointer_id());
         }
         ev.prevent_default();
         drag.set_value(Some((kind, ev.client_x() as f64, ev.client_y() as f64)));
     };
     let on_move = move |ev: web_sys::PointerEvent| {
-        let Some((kind, x0, y0)) = drag.get_value() else { return };
+        let Some((kind, x0, y0)) = drag.get_value() else {
+            return;
+        };
         let (x, y) = (ev.client_x() as f64, ev.client_y() as f64);
         let (dx, dy) = ((x - x0) as f32, (y - y0) as f32);
         drag.set_value(Some((kind, x, y)));

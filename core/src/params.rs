@@ -114,7 +114,11 @@ impl Default for SmokeParams {
 impl SmokeParams {
     pub fn box_size(&self) -> [f32; 3] {
         let r = self.res;
-        [r[0] as f32 * self.cell_size, r[1] as f32 * self.cell_size, r[2] as f32 * self.cell_size]
+        [
+            r[0] as f32 * self.cell_size,
+            r[1] as f32 * self.cell_size,
+            r[2] as f32 * self.cell_size,
+        ]
     }
 }
 
@@ -139,13 +143,23 @@ pub struct WaterJet {
 
 impl Default for WaterBlock {
     fn default() -> Self {
-        Self { min: [-1.2, 0.05, -1.2], max: [-0.4, 1.0, 1.2], velocity: [0.0; 3] }
+        Self {
+            min: [-1.2, 0.05, -1.2],
+            max: [-0.4, 1.0, 1.2],
+            velocity: [0.0; 3],
+        }
     }
 }
 
 impl Default for WaterJet {
     fn default() -> Self {
-        Self { enabled: false, pos: [0.0, 0.2, 0.0], radius: 0.08, velocity: [0.0, 5.0, 0.0], duration: 0.0 }
+        Self {
+            enabled: false,
+            pos: [0.0, 0.2, 0.0],
+            radius: 0.08,
+            velocity: [0.0, 5.0, 0.0],
+            duration: 0.0,
+        }
     }
 }
 
@@ -201,6 +215,10 @@ pub struct WaterParams {
     pub refraction: f32,
     pub absorption: f32,
     pub thickness_scale: f32,
+    /// Fine wind ripples on the surface (normal detail finer than the particles).
+    pub ripple_strength: f32,
+    /// Ripples per metre (bigger = finer).
+    pub ripple_scale: f32,
     pub deep_color: [f32; 3],
     pub shallow_color: [f32; 3],
     pub foam_color: [f32; 3],
@@ -239,12 +257,14 @@ impl Default for WaterParams {
             refraction: 1.0,
             absorption: 3.0,
             thickness_scale: 1.0,
-            deep_color: [0.008, 0.06, 0.15],
-            shallow_color: [0.03, 0.26, 0.44],
+            ripple_strength: 0.035,
+            ripple_scale: 7.0,
+            deep_color: [0.01, 0.05, 0.09],
+            shallow_color: [0.04, 0.24, 0.32],
             foam_color: [0.9, 0.95, 1.0],
             foam_strength: 0.85,
             particle_size: 1.55,
-            spray_size: 0.55,
+            spray_size: 0.3,
         }
     }
 }
@@ -318,7 +338,13 @@ impl Default for SparkParams {
     }
 }
 
-pub const SPARK_PRESETS: &[&str] = &["Campfire crackle", "Bonfire embers", "Grinder sparks", "Forge", "Firefly drift"];
+pub const SPARK_PRESETS: &[&str] = &[
+    "Campfire crackle",
+    "Bonfire embers",
+    "Grinder sparks",
+    "Forge",
+    "Firefly drift",
+];
 
 impl SparkParams {
     pub fn preset(name: &str) -> Option<Self> {
@@ -424,6 +450,63 @@ impl SparkParams {
     }
 }
 
+/// A procedural open-ocean surface out to the horizon (no simulation).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OceanParams {
+    pub enabled: bool,
+    /// Height of the calm sea surface (m).
+    pub level: f32,
+    /// Typical crest-to-trough height of the biggest waves (m).
+    pub wave_height: f32,
+    /// Length of the main swell (m).
+    pub wavelength: f32,
+    /// Direction the waves travel, in degrees.
+    pub wind_direction: f32,
+    /// How far the shorter waves turn away from the wind (0 = all parallel).
+    pub spread: f32,
+    /// Sharp crests and wide troughs (0 = round, 1 = as sharp as possible).
+    pub choppiness: f32,
+    /// Wave speed multiplier (1 = real deep-water speed).
+    pub speed: f32,
+    /// Sharp, short wind chop riding on the swell (0 = smooth swell only).
+    pub chop: f32,
+    /// Fine wind ripples on top.
+    pub ripples: f32,
+    pub ripple_scale: f32,
+    /// Foam on the steepest crests (0–1).
+    pub whitecaps: f32,
+    pub deep_color: [f32; 3],
+    /// Colour of light glowing through thin crests.
+    pub scatter_color: [f32; 3],
+    pub foam_color: [f32; 3],
+    /// Distance at which the sea fades into the hazy horizon (m).
+    pub haze_distance: f32,
+}
+
+impl Default for OceanParams {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            level: 0.0,
+            wave_height: 0.55,
+            wavelength: 3.0,
+            wind_direction: 75.0,
+            spread: 1.0,
+            choppiness: 0.85,
+            speed: 1.0,
+            chop: 0.25,
+            ripples: 0.04,
+            ripple_scale: 3.5,
+            whitecaps: 0.2,
+            deep_color: [0.025, 0.085, 0.125],
+            scatter_color: [0.06, 0.26, 0.3],
+            foam_color: [0.9, 0.94, 0.97],
+            haze_distance: 900.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RenderParams {
@@ -431,6 +514,8 @@ pub struct RenderParams {
     pub light_dir: [f32; 3],
     pub background: [f32; 3],
     pub transparent_background: bool,
+    /// Draw a daytime sky behind everything (instead of the plain background colour).
+    pub sky_background: bool,
     pub show_ground: bool,
     pub show_bounds: bool,
 }
@@ -442,6 +527,7 @@ impl Default for RenderParams {
             light_dir: [0.5, 0.8, 0.35],
             background: [0.006, 0.007, 0.009],
             transparent_background: false,
+            sky_background: false,
             show_ground: true,
             show_bounds: true,
         }
@@ -460,7 +546,13 @@ pub struct CameraParams {
 
 impl Default for CameraParams {
     fn default() -> Self {
-        Self { target: [0.0, 0.9, 0.0], yaw: 0.6, pitch: 0.28, distance: 4.6, fov_deg: 40.0 }
+        Self {
+            target: [0.0, 0.9, 0.0],
+            yaw: 0.6,
+            pitch: 0.28,
+            distance: 4.6,
+            fov_deg: 40.0,
+        }
     }
 }
 
@@ -476,7 +568,13 @@ pub struct ExportParams {
 
 impl Default for ExportParams {
     fn default() -> Self {
-        Self { width: 1920, height: 1080, frames: 120, start_frame: 0, prefix: "tidefire".into() }
+        Self {
+            width: 1920,
+            height: 1080,
+            frames: 120,
+            start_frame: 0,
+            prefix: "tidefire".into(),
+        }
     }
 }
 
@@ -489,6 +587,7 @@ pub struct Scene {
     pub smoke: SmokeParams,
     pub water: WaterParams,
     pub sparks: SparkParams,
+    pub ocean: OceanParams,
     pub render: RenderParams,
     pub camera: CameraParams,
     pub export: ExportParams,
@@ -500,7 +599,17 @@ impl Default for Scene {
     }
 }
 
-pub const PRESETS: &[&str] = &["Campfire", "Bonfire", "Fireball", "Forge", "Grinder Sparks", "Dam Break", "Fountain", "Fire & Water"];
+pub const PRESETS: &[&str] = &[
+    "Campfire",
+    "Bonfire",
+    "Fireball",
+    "Forge",
+    "Grinder Sparks",
+    "Dam Break",
+    "Fountain",
+    "Fire & Water",
+    "Open Ocean",
+];
 
 pub fn preset(name: &str) -> Option<Scene> {
     let base = |name: &str| Scene {
@@ -510,6 +619,7 @@ pub fn preset(name: &str) -> Option<Scene> {
         smoke: SmokeParams::default(),
         water: WaterParams::default(),
         sparks: SparkParams::default(),
+        ocean: OceanParams::default(),
         render: RenderParams::default(),
         camera: CameraParams::default(),
         export: ExportParams::default(),
@@ -557,6 +667,21 @@ pub fn preset(name: &str) -> Option<Scene> {
             s.camera.yaw = 0.35;
             s.camera.pitch = 0.22;
         }
+        "Open Ocean" => {
+            s.smoke.enabled = false;
+            s.water.enabled = false;
+            s.ocean.enabled = true;
+            s.render.show_ground = false;
+            s.render.show_bounds = false;
+            s.render.sky_background = true;
+            s.render.light_dir = [0.45, 0.6, 0.5];
+            s.render.exposure = 1.35;
+            s.camera.target = [0.0, 2.8, -12.0];
+            s.camera.distance = 12.0;
+            s.camera.pitch = 0.02;
+            s.camera.yaw = 0.0;
+            s.camera.fov_deg = 50.0;
+        }
         "Fireball" => {
             s.water.enabled = false;
             s.fps = 30.0;
@@ -594,14 +719,28 @@ pub fn preset(name: &str) -> Option<Scene> {
         }
         "Dam Break" => {
             s.smoke.enabled = false;
-            s.water.blocks = vec![WaterBlock { min: [-1.2, 0.04, -1.2], max: [-0.35, 1.1, 1.2], velocity: [0.0; 3] }];
+            s.water.blocks = vec![WaterBlock {
+                min: [-1.2, 0.04, -1.2],
+                max: [-0.35, 1.1, 1.2],
+                velocity: [0.0; 3],
+            }];
             s.camera.target = [0.0, 0.4, 0.0];
             s.camera.distance = 4.2;
         }
         "Fountain" => {
             s.smoke.enabled = false;
-            s.water.blocks = vec![WaterBlock { min: [-1.2, 0.04, -1.2], max: [1.2, 0.22, 1.2], velocity: [0.0; 3] }];
-            s.water.jets = vec![WaterJet { enabled: true, pos: [0.0, 0.3, 0.0], radius: 0.07, velocity: [0.0, 5.4, 0.0], duration: 0.0 }];
+            s.water.blocks = vec![WaterBlock {
+                min: [-1.2, 0.04, -1.2],
+                max: [1.2, 0.22, 1.2],
+                velocity: [0.0; 3],
+            }];
+            s.water.jets = vec![WaterJet {
+                enabled: true,
+                pos: [0.0, 0.3, 0.0],
+                radius: 0.07,
+                velocity: [0.0, 5.4, 0.0],
+                duration: 0.0,
+            }];
             s.water.res = [64, 56, 64];
             s.camera.target = [0.0, 0.7, 0.0];
             s.camera.distance = 4.6;
@@ -615,8 +754,18 @@ pub fn preset(name: &str) -> Option<Scene> {
             s.smoke.cooling = 1.9;
             s.water.res = [64, 40, 64];
             s.water.box_min = [-1.28, 0.0, -1.28];
-            s.water.blocks = vec![WaterBlock { min: [-1.2, 0.04, -1.2], max: [1.2, 0.18, 1.2], velocity: [0.0; 3] }];
-            s.water.jets = vec![WaterJet { enabled: true, pos: [-0.9, 0.35, 0.0], radius: 0.06, velocity: [2.6, 3.4, 0.0], duration: 0.0 }];
+            s.water.blocks = vec![WaterBlock {
+                min: [-1.2, 0.04, -1.2],
+                max: [1.2, 0.18, 1.2],
+                velocity: [0.0; 3],
+            }];
+            s.water.jets = vec![WaterJet {
+                enabled: true,
+                pos: [-0.9, 0.35, 0.0],
+                radius: 0.06,
+                velocity: [2.6, 3.4, 0.0],
+                duration: 0.0,
+            }];
             s.camera.target = [0.0, 0.8, 0.0];
             s.camera.distance = 5.2;
         }

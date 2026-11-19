@@ -134,6 +134,11 @@ fn fs_shade(in: VOut) -> FOut {
     let tk = textureLoad(thick_tex, px, 0);
     let thick = tk.x * fl.shade.z;
     let foam = clamp(tk.y / max(tk.z, 1e-4), 0.0, 1.0);
+    let t = fl.dir.z;
+
+    // fine wind ripples on surfaces that face up (finer than the particles can resolve)
+    let rs = ripple_slope(p.xz * fl.shallow.w, t, 0.04) * fl.deep.w * clamp(n.y * 1.5, 0.0, 1.0);
+    n = normalize(n + vec3<f32>(-rs.x, 0.0, -rs.y));
 
     let exposure = cam.light_dir.w;
     let l = normalize(cam.light_dir.xyz);
@@ -151,19 +156,23 @@ fn fs_shade(in: VOut) -> FOut {
     // light scattered back out of the water: bright shallow tint at the edges, deep colour in the body
     let depth_t = 1.0 - exp(-thick * fl.shade.y * 0.6);
     let water_col = mix(fl.shallow.rgb, fl.deep.rgb, depth_t);
-    let sss = pow(max(dot(-l, v), 0.0), 4.0) * (1.0 - depth_t) * 0.5; // light glowing through thin sheets
-    let inscatter = water_col * (vec3<f32>(1.0) - trans) * (0.3 + 0.55 * ndl + sss) * exposure;
+    // light glowing through thin sheets and crests (sun behind the water)
+    let sss = pow(max(dot(-l, v), 0.0), 3.0) * (1.0 - depth_t) * 0.9;
+    let sky_light = sky_color(n, l) * 0.6 + vec3<f32>(0.25) * ndl;
+    let inscatter = water_col * (vec3<f32>(1.0) - trans) * (sky_light + vec3<f32>(sss)) * exposure;
     var col = scene.rgb * trans + inscatter;
 
-    // Fresnel reflection of the environment + sun glint
+    // Fresnel reflection of the sky and sun, plus a sharp GGX sun glint
     let fres = 0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
     let r = reflect(-v, n);
-    let spec = pow(max(dot(r, l), 0.0), 500.0) * 8.0 + pow(max(dot(r, l), 0.0), 40.0) * 0.35;
-    col = mix(col, env(r) * exposure, fres) + vec3<f32>(spec * exposure);
+    let refl = (sky_color(r, l) + sun_disc(r, l)) * exposure;
+    let spec = sun_specular(n, v, l, 0.06) * 2.5;
+    col = mix(col, refl, fres) + vec3<f32>(spec * exposure);
 
-    // foam / whitewater sitting on the surface
-    let fa = clamp(foam * fl.shade.w, 0.0, 1.0);
-    col = mix(col, fl.foam.rgb * (0.45 + 0.55 * ndl) * exposure, fa);
+    // foam / whitewater: patchy streaks on the surface rather than a white haze
+    let tex = foam_texture(p.xz, t);
+    let fa = clamp(foam * fl.shade.w, 0.0, 1.0) * smoothstep(0.25, 0.75, tex + foam * 0.35);
+    col = mix(col, fl.foam.rgb * (0.5 + 0.5 * ndl) * exposure, fa);
 
     let t_avg = dot(trans, vec3<f32>(0.3333));
     let alpha = clamp(scene.a * t_avg + (1.0 - t_avg) + fres + fa, 0.0, 1.0);

@@ -3,7 +3,11 @@
 pub use wgpu;
 use wgpu::util::DeviceExt;
 
-pub fn storage(binding: u32, read_only: bool, vis: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
+pub fn storage(
+    binding: u32,
+    read_only: bool,
+    vis: wgpu::ShaderStages,
+) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: vis,
@@ -29,7 +33,12 @@ pub fn uniform(binding: u32, vis: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEn
     }
 }
 
-pub fn buffer(device: &wgpu::Device, label: &str, size: u64, usage: wgpu::BufferUsages) -> wgpu::Buffer {
+pub fn buffer(
+    device: &wgpu::Device,
+    label: &str,
+    size: u64,
+    usage: wgpu::BufferUsages,
+) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: size.max(16),
@@ -38,7 +47,11 @@ pub fn buffer(device: &wgpu::Device, label: &str, size: u64, usage: wgpu::Buffer
     })
 }
 
-pub fn uniform_buffer<T: bytemuck::Pod>(device: &wgpu::Device, label: &str, value: &T) -> wgpu::Buffer {
+pub fn uniform_buffer<T: bytemuck::Pod>(
+    device: &wgpu::Device,
+    label: &str,
+    value: &T,
+) -> wgpu::Buffer {
     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents: bytemuck::bytes_of(value),

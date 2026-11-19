@@ -69,12 +69,23 @@ impl Theme {
         }
     }
 
-    pub const PRESETS: [(&'static str, fn() -> Theme); 3] = [("Ember", Theme::ember), ("Tide", Theme::tide), ("Mono", Theme::mono)];
+    pub const PRESETS: [(&'static str, fn() -> Theme); 3] = [
+        ("Ember", Theme::ember),
+        ("Tide", Theme::tide),
+        ("Mono", Theme::mono),
+    ];
 
     /// Pushes the colours into the stylesheet's variables.
     pub fn apply(&self) {
-        let Some(root) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element()) else { return };
-        let Ok(el) = wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(root) else { return };
+        let Some(root) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.document_element())
+        else {
+            return;
+        };
+        let Ok(el) = wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(root) else {
+            return;
+        };
         let style = el.style();
         for (var, value) in [
             ("--text", &self.text),

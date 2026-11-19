@@ -7,12 +7,15 @@ use leptos::prelude::*;
 
 #[component]
 pub fn AppearanceDialog(ui: Ui) -> impl IntoView {
-    let field = move |label: &'static str, get: fn(&Theme) -> &String, set: fn(&mut Theme, String)| {
+    let field = move |label: &'static str,
+                      get: fn(&Theme) -> &String,
+                      set: fn(&mut Theme, String)| {
         let value = Signal::derive(move || ui.theme.with(|t| from_hex(get(t)).unwrap_or([1.0; 3])));
         let on_change = Callback::new(move |c: [f32; 3]| ui.set_theme(|t| set(t, to_hex(c))));
         view! { <ColorField label=label value=value on_change=on_change /> }
     };
-    let presets = move || Theme::PRESETS
+    let presets = move || {
+        Theme::PRESETS
         .iter()
         .map(|&(name, make)| {
             let active = move || ui.theme.with(|t| *t == make());
@@ -20,7 +23,8 @@ pub fn AppearanceDialog(ui: Ui) -> impl IntoView {
                 <button class="seg" class:on=active on:click=move |_| ui.set_theme(|t| *t = make())>{name}</button>
             }
         })
-        .collect_view();
+        .collect_view()
+    };
     view! {
         <Show when=move || ui.appearance_open.get()>
             <div class="scrim" on:click=move |_| ui.appearance_open.set(false)></div>

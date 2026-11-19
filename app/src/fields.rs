@@ -6,7 +6,11 @@ use leptos::prelude::*;
 
 fn fmt(v: f32, decimals: usize) -> String {
     let s = format!("{v:.decimals$}");
-    if s.starts_with('-') && s.trim_start_matches(['-', '0', '.']).is_empty() { s.trim_start_matches('-').to_owned() } else { s }
+    if s.starts_with('-') && s.trim_start_matches(['-', '0', '.']).is_empty() {
+        s.trim_start_matches('-').to_owned()
+    } else {
+        s
+    }
 }
 
 fn decimals_for(min: f32, max: f32) -> usize {
@@ -25,7 +29,10 @@ fn decimals_for(min: f32, max: f32) -> usize {
 }
 
 fn parse(text: &str) -> Option<f32> {
-    let t: String = text.chars().filter(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')).collect();
+    let t: String = text
+        .chars()
+        .filter(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'))
+        .collect();
     t.parse::<f32>().ok().filter(|v| v.is_finite())
 }
 
@@ -150,12 +157,20 @@ pub fn from_hex(s: &str) -> Option<[f32; 3]> {
     if s.len() != 6 {
         return None;
     }
-    let p = |i: usize| u8::from_str_radix(&s[i..i + 2], 16).ok().map(|v| v as f32 / 255.0);
+    let p = |i: usize| {
+        u8::from_str_radix(&s[i..i + 2], 16)
+            .ok()
+            .map(|v| v as f32 / 255.0)
+    };
     Some([p(0)?, p(2)?, p(4)?])
 }
 
 #[component]
-pub fn ColorField(label: &'static str, #[prop(into)] value: Signal<[f32; 3]>, on_change: Callback<[f32; 3]>) -> impl IntoView {
+pub fn ColorField(
+    label: &'static str,
+    #[prop(into)] value: Signal<[f32; 3]>,
+    on_change: Callback<[f32; 3]>,
+) -> impl IntoView {
     view! {
         <div class="row">
             <label>{label}</label>
@@ -173,7 +188,11 @@ pub fn ColorField(label: &'static str, #[prop(into)] value: Signal<[f32; 3]>, on
 }
 
 #[component]
-pub fn Switch(label: &'static str, #[prop(into)] value: Signal<bool>, on_change: Callback<bool>) -> impl IntoView {
+pub fn Switch(
+    label: &'static str,
+    #[prop(into)] value: Signal<bool>,
+    on_change: Callback<bool>,
+) -> impl IntoView {
     view! {
         <div class="row">
             <label>{label}</label>
@@ -248,7 +267,12 @@ pub fn Section(
 /// A dropdown inside a section (Domain, Emitter, Combustion...), also
 /// remembered between runs under `key`.
 #[component]
-pub fn Fold(title: &'static str, key: &'static str, #[prop(optional)] open: bool, children: Children) -> impl IntoView {
+pub fn Fold(
+    title: &'static str,
+    key: &'static str,
+    #[prop(optional)] open: bool,
+    children: Children,
+) -> impl IntoView {
     let f = folds();
     let is_open = move || f.is_open(key, open);
     view! {

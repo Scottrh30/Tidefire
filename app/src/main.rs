@@ -33,9 +33,15 @@ fn open(ui: Ui) {
 }
 
 fn save(ui: Ui, save_as: bool) {
-    let text = ui.scene.with_untracked(|s| serde_json::to_string_pretty(s).unwrap());
+    let text = ui
+        .scene
+        .with_untracked(|s| serde_json::to_string_pretty(s).unwrap());
     let suggested = ui.scene.with_untracked(|s| format!("{}.tidefire", s.name));
-    let path = if save_as { None } else { ui.scene_path.get_untracked() };
+    let path = if save_as {
+        None
+    } else {
+        ui.scene_path.get_untracked()
+    };
     leptos::task::spawn_local(async move {
         match host::save_scene(text, path, suggested).await {
             Ok(Some(p)) => {

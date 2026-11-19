@@ -1,8 +1,8 @@
 //! The interface's state. The scene being edited lives here as a signal; the
 //! viewport copies it into the GPU engine whenever `rev` changes.
 
-use leptos::prelude::*;
 use crate::prefs::{self, Folds, Theme};
+use leptos::prelude::*;
 use tidefire_core::params::{self, Scene};
 
 #[derive(Clone, Copy)]
@@ -108,7 +108,8 @@ impl Ui {
         if let Some(s) = params::preset(name) {
             self.load(s);
             self.scene_path.set(None);
-            self.status.set(format!("Loaded preset \u{201c}{name}\u{201d}"));
+            self.status
+                .set(format!("Loaded preset \u{201c}{name}\u{201d}"));
         }
     }
 }

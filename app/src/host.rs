@@ -29,14 +29,24 @@ fn js_err(e: JsValue) -> String {
 async fn invoke(cmd: &str, args: &serde_json::Value) -> Result<JsValue, String> {
     let t = tauri().ok_or("this needs the Tidefire desktop app")?;
     let core = get(&t, "core")?;
-    let f: Function = get(&core, "invoke")?.dyn_into().map_err(|_| "invoke is not a function")?;
+    let f: Function = get(&core, "invoke")?
+        .dyn_into()
+        .map_err(|_| "invoke is not a function")?;
     let args = serde_wasm_bindgen::to_value(args).map_err(|e| e.to_string())?;
-    let p: Promise = f.call2(&core, &cmd.into(), &args).map_err(js_err)?.dyn_into().map_err(|_| "invoke did not return a promise")?;
+    let p: Promise = f
+        .call2(&core, &cmd.into(), &args)
+        .map_err(js_err)?
+        .dyn_into()
+        .map_err(|_| "invoke did not return a promise")?;
     JsFuture::from(p).await.map_err(js_err)
 }
 
 fn opt_string(v: JsValue) -> Option<String> {
-    if v.is_null() || v.is_undefined() { None } else { v.as_string() }
+    if v.is_null() || v.is_undefined() {
+        None
+    } else {
+        v.as_string()
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -51,26 +61,48 @@ pub async fn open_scene() -> Result<Option<Opened>, String> {
     if v.is_null() || v.is_undefined() {
         return Ok(None);
     }
-    serde_wasm_bindgen::from_value(v).map(Some).map_err(|e| e.to_string())
+    serde_wasm_bindgen::from_value(v)
+        .map(Some)
+        .map_err(|e| e.to_string())
 }
 
 /// Saves a scene: to `path`, or (if `None`) wherever the Save dialog says.
 /// Returns where it was saved, or `None` when cancelled.
-pub async fn save_scene(text: String, path: Option<String>, suggested: String) -> Result<Option<String>, String> {
-    let v = invoke("save_scene", &serde_json::json!({ "text": text, "path": path, "suggested": suggested })).await?;
+pub async fn save_scene(
+    text: String,
+    path: Option<String>,
+    suggested: String,
+) -> Result<Option<String>, String> {
+    let v = invoke(
+        "save_scene",
+        &serde_json::json!({ "text": text, "path": path, "suggested": suggested }),
+    )
+    .await?;
     Ok(opt_string(v))
 }
 
 /// Folder picker for exports.
 pub async fn pick_folder() -> Result<Option<String>, String> {
-    Ok(opt_string(invoke("pick_folder", &serde_json::json!({})).await?))
+    Ok(opt_string(
+        invoke("pick_folder", &serde_json::json!({})).await?,
+    ))
 }
 
 pub async fn write_file(dir: &str, name: &str, bytes: &[u8]) -> Result<(), String> {
     let data = base64::engine::general_purpose::STANDARD.encode(bytes);
-    invoke("write_file", &serde_json::json!({ "dir": dir, "name": name, "data": data })).await.map(|_| ())
+    invoke(
+        "write_file",
+        &serde_json::json!({ "dir": dir, "name": name, "data": data }),
+    )
+    .await
+    .map(|_| ())
 }
 
 pub async fn write_text(dir: &str, name: &str, text: &str) -> Result<(), String> {
-    invoke("write_text", &serde_json::json!({ "dir": dir, "name": name, "text": text })).await.map(|_| ())
+    invoke(
+        "write_text",
+        &serde_json::json!({ "dir": dir, "name": name, "text": text }),
+    )
+    .await
+    .map(|_| ())
 }

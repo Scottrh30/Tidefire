@@ -65,7 +65,11 @@ impl SmokeSim {
 
         let volume = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("smoke.volume"),
-            size: wgpu::Extent3d { width: res[0], height: res[1], depth_or_array_layers: res[2] },
+            size: wgpu::Extent3d {
+                width: res[0],
+                height: res[1],
+                depth_or_array_layers: res[2],
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D3,
@@ -102,14 +106,38 @@ impl SmokeSim {
             label: Some("smoke.bind"),
             layout: &layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: vel.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: vel_tmp.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: sc.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: sc_tmp.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: pd.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: curl.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(&volume_view) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ubuf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: vel.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: vel_tmp.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: sc.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: sc_tmp.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: pd.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: curl.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(&volume_view),
+                },
             ],
         });
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -135,38 +163,87 @@ impl SmokeSim {
             pack: c("pack_volume"),
             clear: c("clear_all"),
         };
-        Self { res, ubuf, vel, vel_tmp, sc, sc_tmp, bind, pipes, _volume: volume, volume_view, frame: 0 }
+        Self {
+            res,
+            ubuf,
+            vel,
+            vel_tmp,
+            sc,
+            sc_tmp,
+            bind,
+            pipes,
+            _volume: volume,
+            volume_view,
+            frame: 0,
+        }
     }
 
     fn uniforms(&self, p: &SmokeParams, dt: f32, time: f32) -> SmokeU {
         let h = p.cell_size;
         let to_grid = |w: [f32; 3]| -> [f32; 3] {
-            [(w[0] - p.box_min[0]) / h, (w[1] - p.box_min[1]) / h, (w[2] - p.box_min[2]) / h]
+            [
+                (w[0] - p.box_min[0]) / h,
+                (w[1] - p.box_min[1]) / h,
+                (w[2] - p.box_min[2]) / h,
+            ]
         };
         let e = to_grid(p.emitter_pos);
         SmokeU {
             res: [self.res[0], self.res[1], self.res[2], self.frame],
             box_min: [p.box_min[0], p.box_min[1], p.box_min[2], h],
             emit_pos: [e[0], e[1], e[2], (p.emitter_radius / h).max(1.0)],
-            emit_vel: [p.emit_velocity[0], p.emit_velocity[1], p.emit_velocity[2], p.turbulence],
+            emit_vel: [
+                p.emit_velocity[0],
+                p.emit_velocity[1],
+                p.emit_velocity[2],
+                p.turbulence,
+            ],
             emit_rates: [p.fuel_rate, p.temp_rate, p.smoke_rate, dt],
-            combust: [p.burn_rate, p.heat_release, p.smoke_from_burn, p.ignition_temp],
-            diss: [p.cooling, p.smoke_dissipation, p.fuel_dissipation, p.velocity_damping],
+            combust: [
+                p.burn_rate,
+                p.heat_release,
+                p.smoke_from_burn,
+                p.ignition_temp,
+            ],
+            diss: [
+                p.cooling,
+                p.smoke_dissipation,
+                p.fuel_dissipation,
+                p.velocity_damping,
+            ],
             forces: [p.buoyancy, p.smoke_weight, p.vorticity, time],
-            wind: [p.wind[0], p.wind[1], p.wind[2], if p.emitter_on { 1.0 } else { 0.0 }],
-            shape: [p.noise_scale, p.flicker_speed, if p.open_top { 1.0 } else { 0.0 }, p.emitter_patchiness.clamp(0.0, 1.0)],
+            wind: [
+                p.wind[0],
+                p.wind[1],
+                p.wind[2],
+                if p.emitter_on { 1.0 } else { 0.0 },
+            ],
+            shape: [
+                p.noise_scale,
+                p.flicker_speed,
+                if p.open_top { 1.0 } else { 0.0 },
+                p.emitter_patchiness.clamp(0.0, 1.0),
+            ],
         }
     }
 
     fn dispatch(&self, pass: &mut wgpu::ComputePass, pipe: &wgpu::ComputePipeline) {
         pass.set_pipeline(pipe);
         pass.set_bind_group(0, &self.bind, &[]);
-        pass.dispatch_workgroups(gpu::groups(self.res[0], 4), gpu::groups(self.res[1], 4), gpu::groups(self.res[2], 4));
+        pass.dispatch_workgroups(
+            gpu::groups(self.res[0], 4),
+            gpu::groups(self.res[1], 4),
+            gpu::groups(self.res[2], 4),
+        );
     }
 
     pub fn reset(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, p: &SmokeParams) {
         self.frame = 0;
-        queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&self.uniforms(p, 0.0, 0.0)));
+        queue.write_buffer(
+            &self.ubuf,
+            0,
+            bytemuck::bytes_of(&self.uniforms(p, 0.0, 0.0)),
+        );
         let mut enc = device.create_command_encoder(&Default::default());
         {
             let mut pass = enc.begin_compute_pass(&Default::default());
@@ -177,12 +254,28 @@ impl SmokeSim {
     }
 
     /// One solver substep (separate submission so the uniform update is visible).
-    pub fn step(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, p: &SmokeParams, dt: f32, time: f32) {
-        queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&self.uniforms(p, dt, time)));
+    pub fn step(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        p: &SmokeParams,
+        dt: f32,
+        time: f32,
+    ) {
+        queue.write_buffer(
+            &self.ubuf,
+            0,
+            bytemuck::bytes_of(&self.uniforms(p, dt, time)),
+        );
         let bytes = self.vel.size();
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("smoke.step") });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("smoke.step"),
+        });
         {
-            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("smoke.a"), timestamp_writes: None });
+            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("smoke.a"),
+                timestamp_writes: None,
+            });
             self.dispatch(&mut pass, &self.pipes.emit);
             if p.sharp_advection {
                 self.dispatch(&mut pass, &self.pipes.sc_forward);
@@ -196,7 +289,10 @@ impl SmokeSim {
         enc.copy_buffer_to_buffer(&self.sc_tmp, 0, &self.sc, 0, bytes);
         enc.copy_buffer_to_buffer(&self.vel_tmp, 0, &self.vel, 0, bytes);
         {
-            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("smoke.b"), timestamp_writes: None });
+            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("smoke.b"),
+                timestamp_writes: None,
+            });
             self.dispatch(&mut pass, &self.pipes.curl);
             self.dispatch(&mut pass, &self.pipes.forces);
             self.dispatch(&mut pass, &self.pipes.divergence);

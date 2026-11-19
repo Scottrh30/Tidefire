@@ -13,7 +13,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if let Some(dir) = arg(&args, "--visual-test") {
         let update = args.iter().any(|a| a == "--update");
-        let result = headless_device().and_then(|(d, q)| visual_test::run(&d, &q, std::path::Path::new(dir), update));
+        let result = headless_device()
+            .and_then(|(d, q)| visual_test::run(&d, &q, std::path::Path::new(dir), update));
         match result {
             Ok(true) => eprintln!("visual tests passed"),
             Ok(false) => {
@@ -32,7 +33,10 @@ fn main() {
         match params::preset(name) {
             Some(s) => println!("{}", serde_json::to_string_pretty(&s).unwrap()),
             None => {
-                eprintln!("tidefire: unknown preset \"{name}\" (try: {})", params::PRESETS.join(", "));
+                eprintln!(
+                    "tidefire: unknown preset \"{name}\" (try: {})",
+                    params::PRESETS.join(", ")
+                );
                 std::process::exit(1);
             }
         }
@@ -53,7 +57,10 @@ fn main() {
 }
 
 fn arg<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(|s| s.as_str())
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
 }
 
 fn headless(args: &[String]) -> Result<(), String> {
@@ -62,7 +69,12 @@ fn headless(args: &[String]) -> Result<(), String> {
         serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?
     } else {
         let name = arg(args, "--preset").unwrap_or("Campfire");
-        params::preset(name).ok_or_else(|| format!("unknown preset \"{name}\" (try: {})", params::PRESETS.join(", ")))?
+        params::preset(name).ok_or_else(|| {
+            format!(
+                "unknown preset \"{name}\" (try: {})",
+                params::PRESETS.join(", ")
+            )
+        })?
     };
     if let Some(n) = arg(args, "--frames") {
         scene.export.frames = n.parse().map_err(|_| "bad --frames")?;
@@ -90,7 +102,11 @@ fn headless(args: &[String]) -> Result<(), String> {
 
     let frames = scene.export.frames;
     let (w, h) = (scene.export.width, scene.export.height);
-    std::fs::write(out.join(engine::manifest_name(&scene.export.prefix)), engine::sequence_manifest(&scene)).map_err(|e| e.to_string())?;
+    std::fs::write(
+        out.join(engine::manifest_name(&scene.export.prefix)),
+        engine::sequence_manifest(&scene),
+    )
+    .map_err(|e| e.to_string())?;
     let prefix = scene.export.prefix.clone();
     let mut eng = engine::Engine::new(device, queue, scene);
     let target = render::RenderTarget::new(&eng.device, w, h);
@@ -102,17 +118,26 @@ fn headless(args: &[String]) -> Result<(), String> {
         let path = out.join(engine::frame_name(&prefix, f));
         img.save(&path).map_err(|e| e.to_string())?;
         if stats {
-            eprintln!("frame {f:4}  particles {:7}  step {:.1} ms", eng.particle_count(), eng.last_step_ms);
+            eprintln!(
+                "frame {f:4}  particles {:7}  step {:.1} ms",
+                eng.particle_count(),
+                eng.last_step_ms
+            );
         }
     }
-    eprintln!("wrote {frames} frames to {} in {:.1}s", out.display(), t0.elapsed().as_secs_f32());
+    eprintln!(
+        "wrote {frames} frames to {} in {:.1}s",
+        out.display(),
+        t0.elapsed().as_secs_f32()
+    );
     Ok(())
 }
 
 /// GPU device for headless rendering (no window). Uses whatever adapter the
 /// system offers, including software Vulkan (lavapipe) on CI.
 fn headless_device() -> Result<(wgpu::Device, wgpu::Queue), String> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let instance =
+        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         force_fallback_adapter: false,
@@ -120,7 +145,11 @@ fn headless_device() -> Result<(wgpu::Device, wgpu::Queue), String> {
         apply_limit_buckets: false,
     }))
     .map_err(|e| format!("no GPU adapter: {e}"))?;
-    eprintln!("adapter: {} ({:?})", adapter.get_info().name, adapter.get_info().backend);
+    eprintln!(
+        "adapter: {} ({:?})",
+        adapter.get_info().name,
+        adapter.get_info().backend
+    );
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("tidefire"),
         ..Default::default()

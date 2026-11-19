@@ -19,13 +19,13 @@
 //! water absorption, foam strength, smoke colour and smoothing off (the smallest
 //! was caught at colour 2.6, histogram 0.13, texture 20%).
 
+use image::{RgbaImage, imageops};
+use std::fmt::Write as _;
+use std::path::Path;
 use tidefire_core::engine::{self, Engine};
 use tidefire_core::params;
 use tidefire_core::render::RenderTarget;
 use tidefire_core::wgpu;
-use image::{imageops, RgbaImage};
-use std::fmt::Write as _;
-use std::path::Path;
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 200;
@@ -67,23 +67,72 @@ impl Case {
 }
 
 const CASES: &[Case] = &[
-    Case { preset: "Campfire", frames: 40, tweak: None },
-    Case { preset: "Fireball", frames: 24, tweak: None },
-    Case { preset: "Dam Break", frames: 24, tweak: None },
-    Case { preset: "Fountain", frames: 30, tweak: None },
-    Case { preset: "Fire & Water", frames: 40, tweak: None },
-    Case { preset: "Bonfire", frames: 45, tweak: None },
-    Case { preset: "Forge", frames: 40, tweak: None },
-    Case { preset: "Grinder Sparks", frames: 30, tweak: None },
-    Case { preset: "Bonfire", frames: 45, tweak: Some(("Embers only", embers_only)) },
+    Case {
+        preset: "Campfire",
+        frames: 40,
+        tweak: None,
+    },
+    Case {
+        preset: "Fireball",
+        frames: 24,
+        tweak: None,
+    },
+    Case {
+        preset: "Dam Break",
+        frames: 24,
+        tweak: None,
+    },
+    Case {
+        preset: "Fountain",
+        frames: 30,
+        tweak: None,
+    },
+    Case {
+        preset: "Fire & Water",
+        frames: 40,
+        tweak: None,
+    },
+    Case {
+        preset: "Bonfire",
+        frames: 45,
+        tweak: None,
+    },
+    Case {
+        preset: "Forge",
+        frames: 40,
+        tweak: None,
+    },
+    Case {
+        preset: "Grinder Sparks",
+        frames: 30,
+        tweak: None,
+    },
+    Case {
+        preset: "Bonfire",
+        frames: 45,
+        tweak: Some(("Embers only", embers_only)),
+    },
+    Case {
+        preset: "Open Ocean",
+        frames: 10,
+        tweak: None,
+    },
 ];
 
 pub fn slug(name: &str) -> String {
-    name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase()
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_lowercase()
 }
 
-fn render_case(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Result<RgbaImage, String> {
-    let mut scene = params::preset(case.preset).ok_or_else(|| format!("unknown preset {}", case.preset))?;
+fn render_case(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    case: &Case,
+) -> Result<RgbaImage, String> {
+    let mut scene =
+        params::preset(case.preset).ok_or_else(|| format!("unknown preset {}", case.preset))?;
     scene.render.show_bounds = false;
     if let Some((_, tweak)) = case.tweak {
         tweak(&mut scene);
@@ -152,10 +201,13 @@ fn luma(p: &image::Rgba<u8>) -> f32 {
 fn stats(img: &RgbaImage) -> Stats {
     let (w, h) = img.dimensions();
     // background = median of the top-left 8x8 corner
-    let mut corner: Vec<[u8; 3]> = (0..8).flat_map(|y| (0..8).map(move |x| (x, y))).map(|(x, y)| {
-        let p = img.get_pixel(x, y);
-        [p[0], p[1], p[2]]
-    }).collect();
+    let mut corner: Vec<[u8; 3]> = (0..8)
+        .flat_map(|y| (0..8).map(move |x| (x, y)))
+        .map(|(x, y)| {
+            let p = img.get_pixel(x, y);
+            [p[0], p[1], p[2]]
+        })
+        .collect();
     let mut bg = [0f32; 3];
     for (c, b) in bg.iter_mut().enumerate() {
         corner.sort_by_key(|p| p[c]);
@@ -163,7 +215,10 @@ fn stats(img: &RgbaImage) -> Stats {
     }
     let is_content = |x: u32, y: u32| {
         let p = img.get_pixel(x, y);
-        (0..3).map(|c| (p[c] as f32 - bg[c]).abs()).fold(0.0, f32::max) > 12.0
+        (0..3)
+            .map(|c| (p[c] as f32 - bg[c]).abs())
+            .fold(0.0, f32::max)
+            > 12.0
     };
     let mut n = 0usize;
     let mut rgb = [0f64; 3];
@@ -209,13 +264,20 @@ fn compare(a: &RgbaImage, b: &RgbaImage) -> Score {
     let mut diffs: Vec<f32> = ra
         .pixels()
         .zip(rb.pixels())
-        .map(|(p, q)| (0..3).map(|c| (p[c] as f32 - q[c] as f32).abs()).sum::<f32>() / 3.0)
+        .map(|(p, q)| {
+            (0..3)
+                .map(|c| (p[c] as f32 - q[c] as f32).abs())
+                .sum::<f32>()
+                / 3.0
+        })
         .collect();
     let mean = diffs.iter().sum::<f32>() / diffs.len() as f32;
     diffs.sort_by(|x, y| x.partial_cmp(y).unwrap());
     let p99 = diffs[((diffs.len() as f32 * 0.99) as usize).min(diffs.len() - 1)];
     let (sa, sb) = (stats(a), stats(b));
-    let color = (0..3).map(|c| (sa.rgb[c] - sb.rgb[c]).abs()).fold(0.0, f32::max);
+    let color = (0..3)
+        .map(|c| (sa.rgb[c] - sb.rgb[c]).abs())
+        .fold(0.0, f32::max);
     let mut ca = 0.0;
     let mut cb = 0.0;
     let mut hist = 0.0;
@@ -238,27 +300,42 @@ fn compare(a: &RgbaImage, b: &RgbaImage) -> Score {
 fn diff_image(a: &RgbaImage, b: &RgbaImage) -> RgbaImage {
     RgbaImage::from_fn(a.width(), a.height(), |x, y| {
         let (p, q) = (a.get_pixel(x, y), b.get_pixel(x, y));
-        let d = (0..3).map(|c| (p[c] as i32 - q[c] as i32).unsigned_abs()).max().unwrap();
+        let d = (0..3)
+            .map(|c| (p[c] as i32 - q[c] as i32).unsigned_abs())
+            .max()
+            .unwrap();
         let v = (d * 4).min(255) as u8;
         image::Rgba([v, v / 3, 0, 255])
     })
 }
 
-pub fn run(device: &wgpu::Device, queue: &wgpu::Queue, dir: &Path, update: bool) -> Result<bool, String> {
+pub fn run(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    dir: &Path,
+    update: bool,
+) -> Result<bool, String> {
     let out = dir.join("out");
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     let gha = std::env::var_os("GITHUB_ACTIONS").is_some();
-    let mut summary = String::from("| Preset | Layout mean / p99 | Colour | Histogram | Texture | Result |\n|---|---|---|---|---|---|\n");
+    let mut summary = String::from(
+        "| Preset | Layout mean / p99 | Colour | Histogram | Texture | Result |\n|---|---|---|---|---|---|\n",
+    );
     let mut all_ok = true;
     for case in CASES {
         let t0 = std::time::Instant::now();
         let img = render_case(device, queue, case)?;
         let name = slug(case.name());
-        img.save(out.join(format!("{name}.png"))).map_err(|e| e.to_string())?;
+        img.save(out.join(format!("{name}.png")))
+            .map_err(|e| e.to_string())?;
         let ref_path = dir.join(format!("{name}.png"));
         if update {
             img.save(&ref_path).map_err(|e| e.to_string())?;
-            eprintln!("updated  {:<14} ({:.1}s)", case.name(), t0.elapsed().as_secs_f32());
+            eprintln!(
+                "updated  {:<14} ({:.1}s)",
+                case.name(),
+                t0.elapsed().as_secs_f32()
+            );
             continue;
         }
         let reference = match image::open(&ref_path) {
@@ -267,21 +344,36 @@ pub fn run(device: &wgpu::Device, queue: &wgpu::Queue, dir: &Path, update: bool)
                 all_ok = false;
                 eprintln!("MISSING  {:<14} {}: {e}", case.name(), ref_path.display());
                 if gha {
-                    println!("::error title=Visual test::{}: missing reference {}", case.name(), ref_path.display());
+                    println!(
+                        "::error title=Visual test::{}: missing reference {}",
+                        case.name(),
+                        ref_path.display()
+                    );
                 }
-                let _ = writeln!(summary, "| {} | – | – | – | – | ❌ missing reference |", case.name());
+                let _ = writeln!(
+                    summary,
+                    "| {} | – | – | – | – | ❌ missing reference |",
+                    case.name()
+                );
                 continue;
             }
         };
         if reference.dimensions() != img.dimensions() {
-            return Err(format!("{}: reference is {:?}, render is {:?}", case.name(), reference.dimensions(), img.dimensions()));
+            return Err(format!(
+                "{}: reference is {:?}, render is {:?}",
+                case.name(),
+                reference.dimensions(),
+                img.dimensions()
+            ));
         }
         let s = compare(&img, &reference);
         let failures = s.failures();
         let ok = failures.is_empty();
         all_ok &= ok;
         if !ok {
-            diff_image(&img, &reference).save(out.join(format!("{name}_diff.png"))).map_err(|e| e.to_string())?;
+            diff_image(&img, &reference)
+                .save(out.join(format!("{name}_diff.png")))
+                .map_err(|e| e.to_string())?;
         }
         let line = format!(
             "layout {:.2}/{:.1}  colour {:.2}  hist {:.3}  texture {:.1}%  coverage {:.1}%",
@@ -292,13 +384,22 @@ pub fn run(device: &wgpu::Device, queue: &wgpu::Queue, dir: &Path, update: bool)
             s.texture * 100.0,
             s.cover * 100.0
         );
-        eprintln!("{}  {:<14} {line}  {:.1}s", if ok { "ok  " } else { "FAIL" }, case.name(), t0.elapsed().as_secs_f32());
+        eprintln!(
+            "{}  {:<14} {line}  {:.1}s",
+            if ok { "ok  " } else { "FAIL" },
+            case.name(),
+            t0.elapsed().as_secs_f32()
+        );
         for f in &failures {
             eprintln!("        -> {f}");
         }
         if gha {
             let level = if ok { "notice" } else { "error" };
-            let why = if ok { line.clone() } else { failures.join("; ") };
+            let why = if ok {
+                line.clone()
+            } else {
+                failures.join("; ")
+            };
             println!("::{level} title=Visual test {}::{why}", case.name());
         }
         let _ = writeln!(
@@ -310,7 +411,11 @@ pub fn run(device: &wgpu::Device, queue: &wgpu::Queue, dir: &Path, update: bool)
             s.color,
             s.hist,
             s.texture * 100.0,
-            if ok { "✅".to_string() } else { format!("❌ {}", failures.join("; ")) }
+            if ok {
+                "✅".to_string()
+            } else {
+                format!("❌ {}", failures.join("; "))
+            }
         );
     }
     if let Some(path) = std::env::var_os("GITHUB_STEP_SUMMARY") {

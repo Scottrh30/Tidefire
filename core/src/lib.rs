@@ -4,6 +4,7 @@
 
 pub mod engine;
 pub mod gpu;
+pub mod ocean;
 pub mod params;
 pub mod render;
 pub mod smoke;
