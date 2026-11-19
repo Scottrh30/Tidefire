@@ -13,7 +13,7 @@ struct Params {
     diss: vec4<f32>,       // cooling, smoke dissipation, fuel dissipation, velocity damping
     forces: vec4<f32>,     // buoyancy, smoke weight, vorticity, time
     wind: vec4<f32>,       // wind accel xyz, w = emitter on (1/0)
-    shape: vec4<f32>,      // emitter noise scale, flicker speed, open top (1/0), _
+    shape: vec4<f32>,      // emitter noise scale, flicker speed, open top (1/0), emitter patchiness
 }
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -109,7 +109,9 @@ fn emit(@builtin(global_invocation_id) g: vec3<u32>) {
     let t = P.forces.w;
     let fall = 1.0 - smoothstep(r * 0.35, r, d);
     let n = fbm(c * P.shape.x + vec3<f32>(0.0, -t * P.shape.y, t * 0.37));
-    let k = fall * clamp(0.25 + 1.5 * n, 0.0, 2.0) * dt;
+    // patchiness 0: smooth emission; 1: fuel only in separate patches, which grow separate tongues
+    let patchy = smoothstep(0.42, 0.62, n) * 2.2;
+    let k = fall * clamp(mix(0.25 + 1.5 * n, patchy, P.shape.w), 0.0, 2.2) * dt;
     var s = sc[i];
     s.z += P.emit_rates.x * k;
     s.y += P.emit_rates.y * k;
@@ -139,18 +141,73 @@ fn advect_vel(@builtin(global_invocation_id) g: vec3<u32>) {
     vel_tmp[i] = vec4<f32>(sample_vel(p) * damp, 0.0);
 }
 
-@compute @workgroup_size(4, 4, 4)
-fn advect_scalars(@builtin(global_invocation_id) g: vec3<u32>) {
-    if (outside(g)) { return; }
+fn backtrace(g: vec3<u32>, sign: f32) -> vec3<f32> {
     let i = idx(vec3<i32>(g));
     let h = P.box_min.w;
-    let dt = P.emit_rates.w;
+    let dt = P.emit_rates.w * sign;
     let c = vec3<f32>(g) + vec3<f32>(0.5);
     let v0 = vel[i].xyz;
     let mid = c - 0.5 * dt * v0 / h;
     let v1 = sample_vel(mid);
-    let p = c - dt * v1 / h;
-    var s = sample_sc(p);
+    return c - dt * v1 / h;
+}
+
+fn sample_sc_tmp(p: vec3<f32>) -> vec4<f32> {
+    let f = p - vec3<f32>(0.5);
+    let b = vec3<i32>(floor(f));
+    let t = f - floor(f);
+    let c000 = sc_tmp[idx(b)];
+    let c100 = sc_tmp[idx(b + vec3<i32>(1, 0, 0))];
+    let c010 = sc_tmp[idx(b + vec3<i32>(0, 1, 0))];
+    let c110 = sc_tmp[idx(b + vec3<i32>(1, 1, 0))];
+    let c001 = sc_tmp[idx(b + vec3<i32>(0, 0, 1))];
+    let c101 = sc_tmp[idx(b + vec3<i32>(1, 0, 1))];
+    let c011 = sc_tmp[idx(b + vec3<i32>(0, 1, 1))];
+    let c111 = sc_tmp[idx(b + vec3<i32>(1, 1, 1))];
+    return mix(mix(mix(c000, c100, t.x), mix(c010, c110, t.x), t.y),
+               mix(mix(c001, c101, t.x), mix(c011, c111, t.x), t.y), t.z);
+}
+
+// MacCormack, step 1: plain semi-Lagrangian advection into sc_tmp.
+@compute @workgroup_size(4, 4, 4)
+fn advect_sc_forward(@builtin(global_invocation_id) g: vec3<u32>) {
+    if (outside(g)) { return; }
+    sc_tmp[idx(vec3<i32>(g))] = sample_sc(backtrace(g, 1.0));
+}
+
+// Step 2: advect that result backwards in time (into the curl buffer, which is
+// free until the forces pass recomputes it).
+@compute @workgroup_size(4, 4, 4)
+fn advect_sc_backward(@builtin(global_invocation_id) g: vec3<u32>) {
+    if (outside(g)) { return; }
+    curl[idx(vec3<i32>(g))] = sample_sc_tmp(backtrace(g, -1.0));
+}
+
+// Step 3: half the round-trip error corrects the forward result, clamped to the
+// values it was interpolated from (no new extremes, so it stays stable), then
+// combustion.
+@compute @workgroup_size(4, 4, 4)
+fn maccormack_scalars(@builtin(global_invocation_id) g: vec3<u32>) {
+    if (outside(g)) { return; }
+    let i = idx(vec3<i32>(g));
+    let fwd = sc_tmp[i];
+    var s = fwd + 0.5 * (sc[i] - curl[i]);
+    let f = backtrace(g, 1.0) - vec3<f32>(0.5);
+    let b = vec3<i32>(floor(f));
+    var lo = sc[idx(b)];
+    var hi = lo;
+    for (var k = 1; k < 8; k++) {
+        let v = sc[idx(b + vec3<i32>(k & 1, (k >> 1) & 1, (k >> 2) & 1))];
+        lo = min(lo, v);
+        hi = max(hi, v);
+    }
+    s = clamp(s, lo, hi);
+    sc_tmp[i] = combust(s);
+}
+
+fn combust(s_in: vec4<f32>) -> vec4<f32> {
+    let dt = P.emit_rates.w;
+    var s = s_in;
     var smoke = s.x;
     var temp = s.y;
     var fuel = s.z;
@@ -166,7 +223,14 @@ fn advect_scalars(@builtin(global_invocation_id) g: vec3<u32>) {
     temp *= exp(-P.diss.x * dt);
     smoke *= exp(-P.diss.y * dt);
     fuel *= exp(-P.diss.z * dt);
-    sc_tmp[i] = vec4<f32>(max(smoke, 0.0), max(temp, 0.0), max(fuel, 0.0), react);
+    return vec4<f32>(max(smoke, 0.0), max(temp, 0.0), max(fuel, 0.0), react);
+}
+
+// Plain (blurrier, cheaper) path: semi-Lagrangian advection + combustion.
+@compute @workgroup_size(4, 4, 4)
+fn advect_scalars(@builtin(global_invocation_id) g: vec3<u32>) {
+    if (outside(g)) { return; }
+    sc_tmp[idx(vec3<i32>(g))] = combust(sample_sc(backtrace(g, 1.0)));
 }
 
 @compute @workgroup_size(4, 4, 4)

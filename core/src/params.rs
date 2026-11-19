@@ -22,6 +22,8 @@ pub struct SmokeParams {
     pub turbulence: f32,
     pub noise_scale: f32,
     pub flicker_speed: f32,
+    /// 0 = fuel comes out evenly; 1 = in separate patches that grow separate flame tongues.
+    pub emitter_patchiness: f32,
     pub fuel_rate: f32,
     pub temp_rate: f32,
     pub smoke_rate: f32,
@@ -39,6 +41,8 @@ pub struct SmokeParams {
     pub wind: [f32; 3],
     pub open_top: bool,
     pub pressure_iters: u32,
+    /// MacCormack advection: keeps flame edges and smoke detail sharp (a little slower).
+    pub sharp_advection: bool,
     // shading
     pub flame_intensity: f32,
     pub temperature_scale: f32,
@@ -49,6 +53,12 @@ pub struct SmokeParams {
     pub fuel_glow: f32,
     pub step_scale: f32,
     pub max_steps: u32,
+    /// Render-time detail that breaks flames into tongues and filaments finer than the grid.
+    pub flame_detail: f32,
+    /// Size of that detail (bigger = finer filaments).
+    pub detail_scale: f32,
+    /// How fast the detail rushes upward (m/s).
+    pub detail_speed: f32,
 }
 
 impl Default for SmokeParams {
@@ -59,39 +69,44 @@ impl Default for SmokeParams {
             cell_size: 0.03125,
             box_min: [-1.0, 0.0, -1.0],
             emitter_on: true,
-            emitter_pos: [0.0, 0.25, 0.0],
-            emitter_radius: 0.28,
+            emitter_pos: [0.0, 0.14, 0.0],
+            emitter_radius: 0.5,
             emitter_duration: 0.0,
             emit_velocity: [0.0, 0.8, 0.0],
-            turbulence: 1.0,
-            noise_scale: 0.18,
+            turbulence: 2.2,
+            noise_scale: 0.2,
             flicker_speed: 2.5,
+            emitter_patchiness: 0.8,
             fuel_rate: 6.0,
             temp_rate: 2.0,
-            smoke_rate: 0.08,
+            smoke_rate: 0.0,
             burn_rate: 3.0,
             heat_release: 1.6,
-            smoke_from_burn: 0.3,
+            smoke_from_burn: 0.0,
             ignition_temp: 0.3,
-            cooling: 1.0,
-            smoke_dissipation: 0.4,
+            cooling: 3.0,
+            smoke_dissipation: 1.2,
             fuel_dissipation: 1.0,
             velocity_damping: 0.05,
-            buoyancy: 3.5,
+            buoyancy: 3.0,
             smoke_weight: 0.3,
-            vorticity: 6.0,
+            vorticity: 14.0,
             wind: [0.0, 0.0, 0.0],
             open_top: true,
             pressure_iters: 24,
-            flame_intensity: 9.0,
-            temperature_scale: 0.45,
+            sharp_advection: true,
+            flame_intensity: 16.0,
+            temperature_scale: 0.3,
             smoke_color: [0.16, 0.16, 0.17],
-            smoke_absorption: 14.0,
-            self_illumination: 0.25,
+            smoke_absorption: 2.0,
+            self_illumination: 0.0,
             shadow_density: 1.0,
             fuel_glow: 0.0,
             step_scale: 1.0,
-            max_steps: 160,
+            max_steps: 320,
+            flame_detail: 1.0,
+            detail_scale: 20.0,
+            detail_speed: 1.6,
         }
     }
 }
@@ -511,14 +526,12 @@ pub fn preset(name: &str) -> Option<Scene> {
             s.water.enabled = false;
             s.smoke.res = [72, 112, 72];
             s.smoke.box_min = [-1.125, 0.0, -1.125];
-            s.smoke.emitter_pos = [0.0, 0.22, 0.0];
-            s.smoke.emitter_radius = 0.4;
+            s.smoke.emitter_pos = [0.0, 0.14, 0.0];
+            s.smoke.emitter_radius = 0.6;
             s.smoke.fuel_rate = 7.5;
-            s.smoke.temp_rate = 2.0;
-            s.smoke.flame_intensity = 6.0;
-            s.smoke.temperature_scale = 0.32;
-            s.smoke.turbulence = 1.4;
-            s.smoke.vorticity = 8.0;
+            s.smoke.cooling = 2.6;
+            s.smoke.smoke_from_burn = 0.08;
+            s.smoke.smoke_absorption = 6.0;
             s.sparks = SparkParams::preset("Bonfire embers").unwrap();
             s.camera.target = [0.0, 1.05, 0.0];
             s.camera.distance = 4.4;
@@ -526,11 +539,10 @@ pub fn preset(name: &str) -> Option<Scene> {
         }
         "Forge" => {
             s.water.enabled = false;
-            s.smoke.emitter_pos = [0.0, 0.2, 0.0];
-            s.smoke.emitter_radius = 0.3;
-            s.smoke.fuel_rate = 7.0;
-            s.smoke.temp_rate = 2.4;
-            s.smoke.smoke_rate = 0.04;
+            s.smoke.emitter_pos = [0.0, 0.12, 0.0];
+            s.smoke.emitter_radius = 0.42;
+            s.smoke.fuel_rate = 9.0;
+            s.smoke.cooling = 2.4;
             s.sparks = SparkParams::preset("Forge").unwrap();
             s.camera.target = [0.0, 0.7, 0.0];
             s.camera.distance = 3.6;
@@ -569,7 +581,13 @@ pub fn preset(name: &str) -> Option<Scene> {
             s.smoke.buoyancy = 4.0;
             s.smoke.cooling = 0.9;
             s.smoke.smoke_dissipation = 0.15;
-            s.smoke.flame_intensity = 6.5;
+            s.smoke.flame_intensity = 14.0;
+            s.smoke.temperature_scale = 0.5;
+            s.smoke.smoke_absorption = 14.0;
+            s.smoke.smoke_color = [0.1, 0.1, 0.11];
+            s.smoke.self_illumination = 0.12;
+            s.smoke.emitter_patchiness = 0.3;
+            s.smoke.flame_detail = 0.7;
             s.camera.target = [0.0, 1.9, 0.0];
             s.camera.distance = 7.4;
             s.camera.pitch = 0.12;
@@ -591,8 +609,10 @@ pub fn preset(name: &str) -> Option<Scene> {
         "Fire & Water" => {
             s.smoke.box_min = [-0.4, 0.0, -1.0];
             s.smoke.res = [48, 96, 64];
-            s.smoke.emitter_pos = [0.35, 0.25, 0.0];
-            s.smoke.emitter_radius = 0.25;
+            s.smoke.emitter_pos = [0.35, 0.2, 0.0];
+            s.smoke.emitter_radius = 0.3;
+            s.smoke.fuel_rate = 9.0;
+            s.smoke.cooling = 1.9;
             s.water.res = [64, 40, 64];
             s.water.box_min = [-1.28, 0.0, -1.28];
             s.water.blocks = vec![WaterBlock { min: [-1.2, 0.04, -1.2], max: [1.2, 0.18, 1.2], velocity: [0.0; 3] }];

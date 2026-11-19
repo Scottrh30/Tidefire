@@ -17,6 +17,7 @@ struct Vol {
     smoke_color: vec4<f32>, // rgb, absorption
     fire: vec4<f32>,        // flame intensity, temperature scale, smoke self-illumination, shadow density
     ambient: vec4<f32>,     // rgb ambient, fuel glow
+    detail: vec4<f32>,      // flame detail amount, detail scale, detail rise speed, sim time
 }
 
 @group(0) @binding(0) var<uniform> cam: Camera;
@@ -49,13 +50,59 @@ fn unproject(ndc: vec2<f32>, z: f32) -> vec3<f32> {
 fn fire_ramp(t: f32) -> vec3<f32> {
     let x = clamp(t, 0.0, 1.0);
     let c1 = vec3<f32>(0.35, 0.02, 0.0);
-    let c2 = vec3<f32>(1.0, 0.22, 0.01);
-    let c3 = vec3<f32>(1.0, 0.48, 0.06);
-    let c4 = vec3<f32>(1.0, 0.78, 0.4);
+    let c2 = vec3<f32>(1.0, 0.11, 0.0);
+    let c3 = vec3<f32>(1.0, 0.17, 0.01);
+    let c4 = vec3<f32>(1.0, 0.27, 0.035);
     if (x < 0.33) { return mix(vec3<f32>(0.0), c1, x / 0.33); }
     if (x < 0.6) { return mix(c1, c2, (x - 0.33) / 0.27); }
     if (x < 0.85) { return mix(c2, c3, (x - 0.6) / 0.25); }
     return mix(c3, c4, (x - 0.85) / 0.15);
+}
+
+// ---- value noise, for flame detail finer than the simulation grid
+fn hash3(p: vec3<f32>) -> f32 {
+    let q = fract(p * 0.3183099 + vec3<f32>(0.1, 0.17, 0.13)) * 17.0;
+    return fract(q.x * q.y * q.z * (q.x + q.y + q.z));
+}
+
+fn vnoise(p: vec3<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let a = mix(mix(hash3(i), hash3(i + vec3<f32>(1.0, 0.0, 0.0)), u.x),
+                mix(hash3(i + vec3<f32>(0.0, 1.0, 0.0)), hash3(i + vec3<f32>(1.0, 1.0, 0.0)), u.x), u.y);
+    let b = mix(mix(hash3(i + vec3<f32>(0.0, 0.0, 1.0)), hash3(i + vec3<f32>(1.0, 0.0, 1.0)), u.x),
+                mix(hash3(i + vec3<f32>(0.0, 1.0, 1.0)), hash3(i + vec3<f32>(1.0, 1.0, 1.0)), u.x), u.y);
+    return mix(a, b, u.z);
+}
+
+// Breaks hot gas into licking tongues and thin bright sheets: noise stretched
+// vertically and rushing upward, domain-warped so it curls, with ridges
+// (bright edges) and gaps (dark between tongues). 1 where detail is off.
+fn flame_detail(p: vec3<f32>, tt: f32) -> f32 {
+    let amount = vol.detail.x;
+    if (amount <= 0.0) { return 1.0; }
+    let rise = vol.detail.w * vol.detail.z;
+    let q = (p - vec3<f32>(0.0, rise, 0.0)) * vol.detail.y * vec3<f32>(1.0, 0.42, 1.0);
+    let warp = vec3<f32>(vnoise(q * 0.55 + vec3<f32>(3.1, 0.0, 0.0)), vnoise(q * 0.55 + vec3<f32>(0.0, 7.7, 0.0)), vnoise(q * 0.55 + vec3<f32>(0.0, 0.0, 5.3))) - vec3<f32>(0.5);
+    let w = q + warp * 2.2;
+    let n = 0.6 * vnoise(w) + 0.3 * vnoise(w * 2.07 + vec3<f32>(1.3)) + 0.1 * vnoise(w * 4.1 + vec3<f32>(4.7));
+    let ridge = 1.0 - abs(2.0 * n - 1.0);
+    // the hottest gas survives; cooler edges are carved into tongues with gaps
+    // a slow, large-scale layer opens big gaps between separate tongues
+    let big = vnoise(q * vec3<f32>(0.16, 0.22, 0.16) + warp * 0.6 + vec3<f32>(11.0, 0.0, 3.0));
+    let carve = smoothstep(0.32, 0.68, n + (tt - 0.5) * 0.8 + (big - 0.5) * 0.9);
+    let r2 = ridge * ridge;
+    let r8 = r2 * r2 * r2 * r2;
+    // thin bright sheets (ridges) over a dimmer body, like flame fronts
+    let d = carve * (0.22 + 0.9 * r2 * r2 + 1.8 * r8);
+    return mix(1.0, d * 1.25, amount);
+}
+
+// Each channel saturates on its own, so bright fire goes yellow (as on camera)
+// rather than flat white.
+fn film(x: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(1.0) - exp(-x);
 }
 
 fn aces(x: vec3<f32>) -> vec3<f32> {
@@ -118,8 +165,9 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
         let react = s.w;
         // emission from hot gas
         let tt = temp * vol.fire.y;
-        let flame = fire_ramp(tt) * pow(tt, 1.6) * vol.fire.x + vec3<f32>(1.0, 0.45, 0.1) * react * 0.02 * vol.fire.x
-                  + vec3<f32>(0.2, 0.4, 1.0) * fuel * vol.ambient.w;
+        var flame = fire_ramp(tt) * pow(tt, 1.6) * vol.fire.x + vec3<f32>(1.0, 0.45, 0.1) * react * 0.02 * vol.fire.x;
+        if (tt > 0.02) { flame *= flame_detail(p, tt); }
+        flame += vec3<f32>(0.2, 0.4, 1.0) * fuel * vol.ambient.w;
         let dens = smoke * sigma;
         if (dens > 1e-4 || dot(flame, vec3<f32>(1.0)) > 1e-4) {
             // light visibility (short shadow march)
@@ -141,7 +189,7 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
         t += step;
     }
     let exposure = cam.light_dir.w;
-    let c = aces(col * exposure);
+    let c = film(col * exposure);
     let alpha = clamp(1.0 - trans + emis_alpha * exposure, 0.0, 1.0);
     return vec4<f32>(c, alpha);
 }

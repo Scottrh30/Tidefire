@@ -54,6 +54,7 @@ fn Fire(ui: Ui) -> impl IntoView {
                     {slider!(ui, "Turbulence", 0, 5, smoke.turbulence)}
                     {slider!(ui, "Noise scale", 0.02, 1.0, smoke.noise_scale)}
                     {slider!(ui, "Flicker", 0, 10, smoke.flicker_speed)}
+                    {slider!(ui, "Patchiness", 0, 1, smoke.emitter_patchiness)}
                     {slider!(ui, "Fuel", 0, 60, smoke.fuel_rate)}
                     {slider!(ui, "Heat", 0, 20, smoke.temp_rate)}
                     {slider!(ui, "Smoke", 0, 10, smoke.smoke_rate)}
@@ -74,10 +75,14 @@ fn Fire(ui: Ui) -> impl IntoView {
                     {slider!(ui, "Damping", 0, 2, smoke.velocity_damping)}
                     {vec3!(ui, "Wind", smoke.wind)}
                     {slider!(ui, "Pressure iterations", 4, 100, smoke.pressure_iters, int)}
+                    {switch!(ui, "Sharp advection", smoke.sharp_advection)}
                 </Fold>
                 <Fold title="Shading" key="fire.shading">
-                    {slider!(ui, "Flame intensity", 0, 30, smoke.flame_intensity)}
+                    {slider!(ui, "Flame intensity", 0, 40, smoke.flame_intensity)}
                     {slider!(ui, "Temperature scale", 0.05, 3.0, smoke.temperature_scale)}
+                    {slider!(ui, "Flame detail", 0, 1, smoke.flame_detail)}
+                    {slider!(ui, "Detail scale", 2, 40, smoke.detail_scale)}
+                    {slider!(ui, "Detail speed", 0, 5, smoke.detail_speed, unit = " m/s")}
                     {slider!(ui, "Smoke density", 0, 100, smoke.smoke_absorption)}
                     {color!(ui, "Smoke colour", smoke.smoke_color)}
                     {slider!(ui, "Fire lights smoke", 0, 2, smoke.self_illumination)}

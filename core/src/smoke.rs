@@ -23,6 +23,9 @@ struct Pipes {
     emit: wgpu::ComputePipeline,
     advect_vel: wgpu::ComputePipeline,
     advect_scalars: wgpu::ComputePipeline,
+    sc_forward: wgpu::ComputePipeline,
+    sc_backward: wgpu::ComputePipeline,
+    maccormack: wgpu::ComputePipeline,
     curl: wgpu::ComputePipeline,
     forces: wgpu::ComputePipeline,
     divergence: wgpu::ComputePipeline,
@@ -120,6 +123,9 @@ impl SmokeSim {
             emit: c("emit"),
             advect_vel: c("advect_vel"),
             advect_scalars: c("advect_scalars"),
+            sc_forward: c("advect_sc_forward"),
+            sc_backward: c("advect_sc_backward"),
+            maccormack: c("maccormack_scalars"),
             curl: c("compute_curl"),
             forces: c("forces"),
             divergence: c("divergence"),
@@ -148,7 +154,7 @@ impl SmokeSim {
             diss: [p.cooling, p.smoke_dissipation, p.fuel_dissipation, p.velocity_damping],
             forces: [p.buoyancy, p.smoke_weight, p.vorticity, time],
             wind: [p.wind[0], p.wind[1], p.wind[2], if p.emitter_on { 1.0 } else { 0.0 }],
-            shape: [p.noise_scale, p.flicker_speed, if p.open_top { 1.0 } else { 0.0 }, 0.0],
+            shape: [p.noise_scale, p.flicker_speed, if p.open_top { 1.0 } else { 0.0 }, p.emitter_patchiness.clamp(0.0, 1.0)],
         }
     }
 
@@ -178,7 +184,13 @@ impl SmokeSim {
         {
             let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("smoke.a"), timestamp_writes: None });
             self.dispatch(&mut pass, &self.pipes.emit);
-            self.dispatch(&mut pass, &self.pipes.advect_scalars);
+            if p.sharp_advection {
+                self.dispatch(&mut pass, &self.pipes.sc_forward);
+                self.dispatch(&mut pass, &self.pipes.sc_backward);
+                self.dispatch(&mut pass, &self.pipes.maccormack);
+            } else {
+                self.dispatch(&mut pass, &self.pipes.advect_scalars);
+            }
             self.dispatch(&mut pass, &self.pipes.advect_vel);
         }
         enc.copy_buffer_to_buffer(&self.sc_tmp, 0, &self.sc, 0, bytes);

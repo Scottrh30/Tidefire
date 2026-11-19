@@ -27,6 +27,17 @@ fn main() {
         }
         return;
     }
+    if let Some(name) = arg(&args, "--dump-preset") {
+        // Prints a preset as a .tidefire scene, to start a custom scene from.
+        match params::preset(name) {
+            Some(s) => println!("{}", serde_json::to_string_pretty(&s).unwrap()),
+            None => {
+                eprintln!("tidefire: unknown preset \"{name}\" (try: {})", params::PRESETS.join(", "));
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--headless") {
         if let Err(e) = headless(&args) {
             eprintln!("tidefire: {e}");
@@ -35,7 +46,7 @@ fn main() {
         return;
     }
     println!(
-        "Tidefire {} command line tool\n\nUsage:\n  tidefire-cli --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR] [--transfer apic|flip] [--transparent] [--stats]\n  tidefire-cli --visual-test DIR [--update]\n\nPresets: {}",
+        "Tidefire {} command line tool\n\nUsage:\n  tidefire-cli --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR] [--transfer apic|flip] [--transparent] [--stats]\n  tidefire-cli --visual-test DIR [--update]\n  tidefire-cli --dump-preset NAME > scene.tidefire\n\nPresets: {}",
         env!("CARGO_PKG_VERSION"),
         params::PRESETS.join(", ")
     );

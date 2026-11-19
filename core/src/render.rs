@@ -34,6 +34,7 @@ struct VolU {
     smoke_color: [f32; 4],
     fire: [f32; 4],
     ambient: [f32; 4],
+    detail: [f32; 4],
 }
 
 #[repr(C)]
@@ -499,6 +500,7 @@ impl Renderer {
             smoke_color: [sp.smoke_color[0], sp.smoke_color[1], sp.smoke_color[2], sp.smoke_absorption],
             fire: [sp.flame_intensity, sp.temperature_scale, sp.self_illumination, sp.shadow_density],
             ambient: [0.12, 0.13, 0.16, sp.fuel_glow],
+            detail: [sp.flame_detail.clamp(0.0, 1.0), sp.detail_scale.max(0.1), sp.detail_speed, sim_time],
         };
         queue.write_buffer(&self.vol_buf, 0, bytemuck::bytes_of(&vu));
 

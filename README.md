@@ -7,6 +7,7 @@ The app is a Tauri window with a Leptos interface. The simulation engine is comp
 ## Milestone 1
 
 - **Fire & smoke:** a GPU voxel solver. It handles emission with noise flicker, fuel, combustion (fuel → heat + soot), buoyancy, vorticity confinement, wind, an open or closed top and a red-black pressure projection. The volume is raymarched with filmic tonemapping, a blackbody-style flame ramp, light shadowing and smoke lit by the fire.
+- **Realistic flames:** MacCormack (sharp) advection keeps flame edges crisp. Render-time flame detail breaks hot gas into licking tongues, thin bright sheets and dark gaps finer than the grid. A per-channel film tonemap makes bright fire saturate to orange-yellow (as on camera) rather than white. The look was tuned against a reference photo of a real fire.
 - **Water:** GPU APIC liquid (Affine Particle-In-Cell, the default) on a staggered grid, with the original FLIP/PIC blend still selectable. Particle-to-grid transfer uses fixed-point atomics, with a free-surface pressure solve, volume preservation and RK2 advection. Sources are fill blocks and jets.
 - **Water rendering:** a smooth screen-space surface. Particle depth is blurred with a bilateral, narrow-range filter, then shaded with refraction, Beer–Lambert absorption, Fresnel environment reflection, sun glints and foam. The old per-particle spheres remain available as the Particles look.
 - **Whitewater:** foam on fast or agitated particles. Ballistic spray droplets are spawned from fast surface particles and get drag, a set lifetime and re-absorption into the water.
