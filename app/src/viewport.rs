@@ -18,6 +18,8 @@ pub struct Gpu {
     applied_rev: u64,
     applied_reset: u64,
     applied_step: u64,
+    /// Scene revision last drawn; while paused nothing is redrawn until it changes.
+    drawn_rev: u64,
     adapter: String,
 }
 
@@ -105,6 +107,7 @@ async fn init_gpu(canvas: web_sys::HtmlCanvasElement, ui: Ui) -> Result<Gpu, Str
         applied_rev: ui.rev.get_untracked(),
         applied_reset: ui.reset_rev.get_untracked(),
         applied_step: ui.step_rev.get_untracked(),
+        drawn_rev: 0,
         adapter: if adapter.is_empty() { "WebGPU".into() } else { adapter },
     })
 }
@@ -120,18 +123,27 @@ fn frame(ui: Ui, canvas: web_sys::HtmlCanvasElement) {
             g.engine.scene = ui.scene.get_untracked();
             g.applied_rev = rev;
         }
+        let mut changed = rev != g.drawn_rev;
         let reset = ui.reset_rev.get_untracked();
         if reset != g.applied_reset {
             g.engine.reset();
             g.applied_reset = reset;
+            changed = true;
         }
         let step = ui.step_rev.get_untracked();
         if !ui.export.running.get_untracked() && (ui.playing.get_untracked() || step != g.applied_step) {
             g.engine.step_frame();
+            changed = true;
         }
         g.applied_step = step;
+        let resized = g.config.width != pw || g.config.height != ph;
+        // Paused and nothing changed: the canvas keeps showing the last frame.
+        if !changed && !resized && !ui.export.running.get_untracked() {
+            return;
+        }
+        g.drawn_rev = rev;
 
-        if g.config.width != pw || g.config.height != ph {
+        if resized {
             canvas.set_width(pw);
             canvas.set_height(ph);
             g.config.width = pw;

@@ -15,7 +15,19 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 960 }, dev
 page.on('console', m => log.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', e => log.push(`[pageerror] ${e.message}`));
 const wait = ms => page.waitForTimeout(ms);
-const shot = async name => { await wait(300); await page.screenshot({ path: `${out}/${name}.png` }); log.push(`--- ${name}`); };
+const shot = async name => {
+  try {
+    await wait(300);
+    await page.screenshot({ path: `${out}/${name}.png`, timeout: 120000 });
+    log.push(`--- ${name}`);
+  } catch (e) {
+    log.push(`!!! ${name}: ${e.message.split('\n')[0]}`);
+  }
+};
+const playing = async () => ((await page.locator('button.play').textContent().catch(() => '')) || '').includes('Pause');
+// Pause before each screenshot: software WebGPU is too busy simulating to also capture.
+const pause = async () => { if (await playing()) { await page.locator('button.play').click(); } await wait(1500); };
+const play = async () => { if (!(await playing())) { await page.locator('button.play').click(); } };
 const frame = async () => (await page.locator('.stats span').first().textContent().catch(() => '')) || '';
 const preset = async name => { await page.selectOption('select.preset', name); };
 // Software WebGPU is slow: wait until the sim has advanced `n` frames (or give up).
@@ -29,16 +41,22 @@ const untilFrame = async (n, ms) => {
   return -1;
 };
 
+try {
 await page.goto(url);
-log.push(`frame after load: ${await untilFrame(20, 60000)}`);
+log.push(`frame after load: ${await untilFrame(20, 90000)}`);
+await pause();
 await shot('01-campfire');
 
 await preset('Dam Break');
-log.push(`dam break: ${await untilFrame(25, 90000)}`);
+await play();
+log.push(`dam break: ${await untilFrame(25, 120000)}`);
+await pause();
 await shot('02-dam-break');
 
 await preset('Fire & Water');
-log.push(`fire & water: ${await untilFrame(40, 120000)}`);
+await play();
+log.push(`fire & water: ${await untilFrame(40, 150000)}`);
+await pause();
 await shot('03-fire-and-water');
 
 // Orbit the camera, then pause.
@@ -47,7 +65,6 @@ await page.mouse.move(vp.x + vp.width * 0.5, vp.y + vp.height * 0.5);
 await page.mouse.down();
 await page.mouse.move(vp.x + vp.width * 0.65, vp.y + vp.height * 0.42, { steps: 8 });
 await page.mouse.up();
-await page.keyboard.press(' ');
 await wait(1500);
 await shot('04-orbit-paused');
 
@@ -58,6 +75,10 @@ await shot('05-water-panel');
 // Export dialog.
 await page.locator('button', { hasText: 'Export' }).first().click();
 await shot('06-export-dialog');
-
-await browser.close();
-fs.writeFileSync(`${out}/console.txt`, log.join('\n'));
+} catch (e) {
+  log.push(`!!! script: ${e.message.split('\n')[0]}`);
+} finally {
+  fs.writeFileSync(`${out}/console.txt`, log.join('\n'));
+  console.log(log.join('\n'));
+  await browser.close();
+}
