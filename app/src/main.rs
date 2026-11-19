@@ -73,7 +73,10 @@ fn TopBar(ui: Ui) -> impl IntoView {
             <div class="stats">
                 <span>{move || format!("Frame {}", stats().frame)}</span>
                 <span>{move || format!("{:.2} s", stats().time)}</span>
-                <span>{move || format!("sim {:.1} ms", stats().step_ms)}</span>
+                <span title="Simulated frames per second in the viewport">{move || {
+                    let f = stats().fps;
+                    if f > 0.0 { format!("{f:.0} fps") } else { "paused".to_string() }
+                }}</span>
                 <Show when=move || ui.scene.with(|s| s.water.enabled)>
                     <span>{move || format!("{} particles", stats().particles)}</span>
                 </Show>

@@ -37,7 +37,8 @@ pub struct Export {
 pub struct Stats {
     pub frame: u32,
     pub time: f32,
-    pub step_ms: f32,
+    /// Simulated frames per second the viewport is achieving (0 while paused).
+    pub fps: f32,
     pub particles: u32,
     pub adapter: String,
 }

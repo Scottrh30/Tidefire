@@ -20,6 +20,8 @@ pub struct Gpu {
     applied_step: u64,
     /// Scene revision last drawn; while paused nothing is redrawn until it changes.
     drawn_rev: u64,
+    last_step_ms: f64,
+    fps: f32,
     adapter: String,
 }
 
@@ -108,6 +110,8 @@ async fn init_gpu(canvas: web_sys::HtmlCanvasElement, ui: Ui) -> Result<Gpu, Str
         applied_reset: ui.reset_rev.get_untracked(),
         applied_step: ui.step_rev.get_untracked(),
         drawn_rev: 0,
+        last_step_ms: 0.0,
+        fps: 0.0,
         adapter: if adapter.is_empty() { "WebGPU".into() } else { adapter },
     })
 }
@@ -134,6 +138,16 @@ fn frame(ui: Ui, canvas: web_sys::HtmlCanvasElement) {
         if !ui.export.running.get_untracked() && (ui.playing.get_untracked() || step != g.applied_step) {
             g.engine.step_frame();
             changed = true;
+            let now = web_sys::window().and_then(|w| w.performance()).map(|p| p.now()).unwrap_or(0.0);
+            let dt = now - g.last_step_ms;
+            if g.last_step_ms > 0.0 && dt > 0.0 && dt < 1000.0 {
+                let inst = (1000.0 / dt) as f32;
+                g.fps = if g.fps == 0.0 { inst } else { g.fps * 0.9 + inst * 0.1 };
+            }
+            g.last_step_ms = now;
+        } else {
+            g.last_step_ms = 0.0;
+            g.fps = 0.0;
         }
         g.applied_step = step;
         let resized = g.config.width != pw || g.config.height != ph;
@@ -170,7 +184,7 @@ fn frame(ui: Ui, canvas: web_sys::HtmlCanvasElement) {
         let stats = Stats {
             frame: g.engine.frame,
             time: g.engine.time,
-            step_ms: g.engine.last_step_ms,
+            fps: g.fps,
             particles: g.engine.particle_count(),
             adapter: g.adapter.clone(),
         };
@@ -232,11 +246,14 @@ pub fn Viewport(ui: Ui) -> impl IntoView {
         let (dx, dy) = ((x - x0) as f32, (y - y0) as f32);
         drag.set_value(Some((kind, x, y)));
         ui.edit(|s| {
+            let show_ground = s.render.show_ground;
             let c = &mut s.camera;
             match kind {
                 Drag::Orbit => {
                     c.yaw -= dx * 0.008;
-                    c.pitch = (c.pitch + dy * 0.008).clamp(-1.45, 1.45);
+                    // With the ground showing, stay above it (below, it hides everything).
+                    let low = if show_ground { -0.05 } else { -1.45 };
+                    c.pitch = (c.pitch + dy * 0.008).clamp(low, 1.45);
                 }
                 Drag::Pan => {
                     let cm = camera_math(c, 1.6);

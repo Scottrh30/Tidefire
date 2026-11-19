@@ -110,6 +110,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
   background: var(--bg1); border: 1px solid #3a3d45; border-radius: 12px; padding: 16px 6px 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .55); }
 .dialog h2 { font-size: 15px; font-weight: 600; padding: 0 14px 4px; }
 .dialog .dim { color: var(--dim); padding: 0 14px 10px; line-height: 1.45; }
+.dialog .row > label { width: 170px; }
 .dialog .path { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dialog .warn { color: #e6b450; padding: 8px 14px 0; }
 .progress { position: relative; height: 22px; margin: 12px 14px 0; border-radius: 6px; background: var(--field); border: 1px solid var(--field-line); overflow: hidden; }
