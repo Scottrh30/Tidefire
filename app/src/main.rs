@@ -2,10 +2,12 @@
 //! engine (`tidefire-core`) is compiled into the same WebAssembly module and
 //! runs on the GPU through WebGPU.
 
+mod appearance;
 mod export;
 mod fields;
 mod host;
 mod panels;
+mod prefs;
 mod state;
 mod viewport;
 
@@ -82,6 +84,10 @@ fn TopBar(ui: Ui) -> impl IntoView {
                 </Show>
             </div>
             <div class="status" title=move || ui.status.get()>{move || ui.status.get()}</div>
+            <button class="btn icon" title="Appearance: interface colours" on:click=move |_| ui.appearance_open.set(true)>
+                <span class="swatches"><i></i><i></i><i></i></span>
+                "Appearance"
+            </button>
         </header>
     }
 }
@@ -89,8 +95,15 @@ fn TopBar(ui: Ui) -> impl IntoView {
 #[component]
 fn Root() -> impl IntoView {
     let ui = Ui::new();
+    provide_context(ui.folds);
     // Keyboard: Space play/pause, . step, R reset, Ctrl+S / Ctrl+O.
     let handle = window_event_listener(leptos::ev::keydown, move |ev| {
+        if ui.appearance_open.get_untracked() {
+            if ev.key() == "Escape" {
+                ui.appearance_open.set(false);
+            }
+            return;
+        }
         if ui.export.open.get_untracked() {
             if ev.key() == "Escape" && !ui.export.running.get_untracked() {
                 ui.export.open.set(false);
@@ -128,6 +141,7 @@ fn Root() -> impl IntoView {
                 <viewport::Viewport ui=ui />
             </div>
             <export::ExportDialog ui=ui />
+            <appearance::AppearanceDialog ui=ui />
         </div>
     }
 }

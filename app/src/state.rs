@@ -2,6 +2,7 @@
 //! viewport copies it into the GPU engine whenever `rev` changes.
 
 use leptos::prelude::*;
+use crate::prefs::{self, Folds, Theme};
 use tidefire_core::params::{self, Scene};
 
 #[derive(Clone, Copy)]
@@ -20,6 +21,11 @@ pub struct Ui {
     pub gpu_error: RwSignal<Option<String>>,
     pub scene_path: RwSignal<Option<String>>,
     pub export: Export,
+    /// Interface colours (kept between runs, not part of the scene).
+    pub theme: RwSignal<Theme>,
+    pub appearance_open: RwSignal<bool>,
+    /// Which panel dropdowns are open (kept between runs).
+    pub folds: Folds,
 }
 
 #[derive(Clone, Copy)]
@@ -45,6 +51,8 @@ pub struct Stats {
 
 impl Ui {
     pub fn new() -> Self {
+        let theme: Theme = prefs::load("theme").unwrap_or_default();
+        theme.apply();
         Self {
             scene: RwSignal::new(Scene::default()),
             rev: RwSignal::new(1),
@@ -64,7 +72,19 @@ impl Ui {
                 done: RwSignal::new(0),
                 total: RwSignal::new(0),
             },
+            theme: RwSignal::new(theme),
+            appearance_open: RwSignal::new(false),
+            folds: Folds::load(),
         }
+    }
+
+    /// Changes the interface colours, applies them right away and remembers them.
+    pub fn set_theme(&self, f: impl FnOnce(&mut Theme)) {
+        self.theme.update(f);
+        self.theme.with_untracked(|t| {
+            t.apply();
+            prefs::save("theme", t);
+        });
     }
 
     /// Changes the scene (from a field, the camera, a file...).

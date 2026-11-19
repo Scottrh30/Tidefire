@@ -68,13 +68,26 @@ await page.mouse.up();
 await wait(1500);
 await shot('04-orbit-paused');
 
-// Water panel scrolled into view.
+// Dropdowns: open Combustion (fire) and Whitewater (water), close Emitter.
+await page.locator('.fold-head', { hasText: 'Emitter' }).first().click();
+await page.locator('.fold-head', { hasText: 'Combustion' }).first().click();
+await shot('05-fire-dropdowns');
+await page.locator('.fold-head', { hasText: 'Whitewater' }).first().click();
 await page.locator('.section header', { hasText: 'Water' }).scrollIntoViewIfNeeded();
-await shot('05-water-panel');
+await shot('06-water-dropdowns');
 
 // Export dialog.
 await page.locator('button', { hasText: 'Export' }).first().click();
-await shot('06-export-dialog');
+await shot('07-export-dialog');
+await page.keyboard.press('Escape');
+
+// Appearance: the dialog, then the Tide theme applied to the whole interface.
+await page.locator('button', { hasText: 'Appearance' }).click();
+await shot('08-appearance');
+await page.locator('.dialog .seg', { hasText: 'Tide' }).click();
+await shot('09-appearance-tide');
+await page.locator('.dialog button', { hasText: 'Done' }).click();
+await shot('10-tide-theme');
 } catch (e) {
   log.push(`!!! script: ${e.message.split('\n')[0]}`);
 } finally {

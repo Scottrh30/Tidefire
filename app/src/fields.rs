@@ -1,6 +1,7 @@
 //! Input widgets for the parameter panels, plus macros that bind them to a
 //! field of the scene (`slider!(ui, "Buoyancy", 0.0, 15.0, smoke.buoyancy)`).
 
+use crate::prefs::Folds;
 use leptos::prelude::*;
 
 fn fmt(v: f32, decimals: usize) -> String {
@@ -52,6 +53,7 @@ pub fn Slider(
                     min=min.to_string()
                     max=max.to_string()
                     step=step.to_string()
+                    style=move || format!("--p:{:.2}%", 100.0 * ((value.get() - min) / (max - min)).clamp(0.0, 1.0))
                     prop:value=move || value.get().clamp(min, max).to_string()
                     on:input=move |ev| if let Some(v) = parse(&event_target_value(&ev)) { set(v) }
                 />
@@ -213,14 +215,26 @@ pub fn Choice<T: Copy + PartialEq + Send + Sync + 'static>(
     }
 }
 
-/// A collapsible panel section.
+fn folds() -> Folds {
+    use_context::<Folds>().expect("Folds context")
+}
+
+/// A collapsible panel section (Fire & smoke, Water...). Remembers whether it
+/// was open between runs, under `key`.
 #[component]
-pub fn Section(title: &'static str, #[prop(optional)] accent: &'static str, #[prop(default = true)] open: bool, children: Children) -> impl IntoView {
-    let is_open = RwSignal::new(open);
+pub fn Section(
+    title: &'static str,
+    key: &'static str,
+    #[prop(optional)] accent: &'static str,
+    #[prop(default = true)] open: bool,
+    children: Children,
+) -> impl IntoView {
+    let f = folds();
+    let is_open = move || f.is_open(key, open);
     view! {
-        <section class="section" class:closed=move || !is_open.get()>
-            <header on:click=move |_| is_open.update(|o| *o = !*o)>
-                <span class="chev">{move || if is_open.get() { "\u{25be}" } else { "\u{25b8}" }}</span>
+        <section class="section" class:closed=move || !is_open()>
+            <header on:click=move |_| f.set(key, !is_open())>
+                <span class="chev">{move || if is_open() { "\u{25be}" } else { "\u{25b8}" }}</span>
                 <span class="dot" style=format!("background:{}", if accent.is_empty() { "var(--dim)" } else { accent })></span>
                 {title}
             </header>
@@ -229,9 +243,21 @@ pub fn Section(title: &'static str, #[prop(optional)] accent: &'static str, #[pr
     }
 }
 
+/// A dropdown inside a section (Domain, Emitter, Combustion...), also
+/// remembered between runs under `key`.
 #[component]
-pub fn Sub(title: &'static str) -> impl IntoView {
-    view! { <div class="sub">{title}</div> }
+pub fn Fold(title: &'static str, key: &'static str, #[prop(optional)] open: bool, children: Children) -> impl IntoView {
+    let f = folds();
+    let is_open = move || f.is_open(key, open);
+    view! {
+        <div class="fold" class:closed=move || !is_open()>
+            <button class="fold-head" on:click=move |_| f.set(key, !is_open())>
+                <span class="chev">{move || if is_open() { "\u{25be}" } else { "\u{25b8}" }}</span>
+                {title}
+            </button>
+            <div class="fold-body">{children()}</div>
+        </div>
+    }
 }
 
 #[component]

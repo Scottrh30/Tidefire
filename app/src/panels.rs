@@ -1,7 +1,7 @@
 //! The parameter panel on the left: simulation, fire & smoke, water, render
 //! and camera settings. Every control edits the scene live.
 
-use crate::fields::{Choice, Hint, Section, Slider, Sub, Vec3Field};
+use crate::fields::{Choice, Fold, Hint, Section, Slider, Vec3Field};
 use crate::state::Ui;
 use crate::{color, number, slider, switch, vec3};
 use leptos::prelude::*;
@@ -24,7 +24,7 @@ pub fn Panels(ui: Ui) -> impl IntoView {
 #[component]
 fn Simulation(ui: Ui) -> impl IntoView {
     view! {
-        <Section title="Simulation">
+        <Section title="Simulation" key="simulation">
             {slider!(ui, "Frame rate", 1, 120, fps, unit = " fps")}
             {slider!(ui, "Substeps", 1, 16, substeps, int)}
         </Section>
@@ -35,49 +35,54 @@ fn Simulation(ui: Ui) -> impl IntoView {
 fn Fire(ui: Ui) -> impl IntoView {
     let on = Signal::derive(move || ui.scene.with(|s| s.smoke.enabled));
     view! {
-        <Section title="Fire & smoke" accent="#ff7a2f">
+        <Section title="Fire & smoke" key="fire" accent="#ff7a2f">
             {switch!(ui, "Enabled", smoke.enabled)}
             <div class="group" class:off=move || !on.get()>
-                <Sub title="Domain" />
-                {vec3!(ui, "Resolution", smoke.res, int)}
-                {number!(ui, "Voxel size", smoke.cell_size, unit = " m")}
-                {vec3!(ui, "Position", smoke.box_min)}
-                {switch!(ui, "Open top", smoke.open_top)}
-                <Sub title="Emitter" />
-                {switch!(ui, "Emitting", smoke.emitter_on)}
-                {vec3!(ui, "Position", smoke.emitter_pos)}
-                {slider!(ui, "Radius", 0.02, 1.0, smoke.emitter_radius)}
-                {slider!(ui, "Stop after", 0, 30, smoke.emitter_duration, unit = " s")}
-                {vec3!(ui, "Velocity", smoke.emit_velocity)}
-                {slider!(ui, "Turbulence", 0, 5, smoke.turbulence)}
-                {slider!(ui, "Noise scale", 0.02, 1.0, smoke.noise_scale)}
-                {slider!(ui, "Flicker", 0, 10, smoke.flicker_speed)}
-                {slider!(ui, "Fuel", 0, 60, smoke.fuel_rate)}
-                {slider!(ui, "Heat", 0, 20, smoke.temp_rate)}
-                {slider!(ui, "Smoke", 0, 10, smoke.smoke_rate)}
-                <Sub title="Combustion" />
-                {slider!(ui, "Burn rate", 0, 20, smoke.burn_rate)}
-                {slider!(ui, "Heat release", 0, 6, smoke.heat_release)}
-                {slider!(ui, "Soot from burn", 0, 4, smoke.smoke_from_burn)}
-                {slider!(ui, "Ignition temp", 0, 2, smoke.ignition_temp)}
-                {slider!(ui, "Cooling", 0, 6, smoke.cooling)}
-                {slider!(ui, "Smoke fade", 0, 3, smoke.smoke_dissipation)}
-                {slider!(ui, "Fuel fade", 0, 6, smoke.fuel_dissipation)}
-                <Sub title="Forces" />
-                {slider!(ui, "Buoyancy", 0, 15, smoke.buoyancy)}
-                {slider!(ui, "Smoke weight", 0, 3, smoke.smoke_weight)}
-                {slider!(ui, "Vorticity", 0, 30, smoke.vorticity)}
-                {slider!(ui, "Damping", 0, 2, smoke.velocity_damping)}
-                {vec3!(ui, "Wind", smoke.wind)}
-                {slider!(ui, "Pressure iterations", 4, 100, smoke.pressure_iters, int)}
-                <Sub title="Shading" />
-                {slider!(ui, "Flame intensity", 0, 30, smoke.flame_intensity)}
-                {slider!(ui, "Temperature scale", 0.05, 3.0, smoke.temperature_scale)}
-                {slider!(ui, "Smoke density", 0, 100, smoke.smoke_absorption)}
-                {color!(ui, "Smoke colour", smoke.smoke_color)}
-                {slider!(ui, "Fire lights smoke", 0, 2, smoke.self_illumination)}
-                {slider!(ui, "Shadow density", 0, 4, smoke.shadow_density)}
-                {slider!(ui, "Quality (steps)", 32, 512, smoke.max_steps, int)}
+                <Fold title="Domain" key="fire.domain">
+                    {vec3!(ui, "Resolution", smoke.res, int)}
+                    {number!(ui, "Voxel size", smoke.cell_size, unit = " m")}
+                    {vec3!(ui, "Position", smoke.box_min)}
+                    {switch!(ui, "Open top", smoke.open_top)}
+                </Fold>
+                <Fold title="Emitter" key="fire.emitter" open=true>
+                    {switch!(ui, "Emitting", smoke.emitter_on)}
+                    {vec3!(ui, "Position", smoke.emitter_pos)}
+                    {slider!(ui, "Radius", 0.02, 1.0, smoke.emitter_radius)}
+                    {slider!(ui, "Stop after", 0, 30, smoke.emitter_duration, unit = " s")}
+                    {vec3!(ui, "Velocity", smoke.emit_velocity)}
+                    {slider!(ui, "Turbulence", 0, 5, smoke.turbulence)}
+                    {slider!(ui, "Noise scale", 0.02, 1.0, smoke.noise_scale)}
+                    {slider!(ui, "Flicker", 0, 10, smoke.flicker_speed)}
+                    {slider!(ui, "Fuel", 0, 60, smoke.fuel_rate)}
+                    {slider!(ui, "Heat", 0, 20, smoke.temp_rate)}
+                    {slider!(ui, "Smoke", 0, 10, smoke.smoke_rate)}
+                </Fold>
+                <Fold title="Combustion" key="fire.combustion">
+                    {slider!(ui, "Burn rate", 0, 20, smoke.burn_rate)}
+                    {slider!(ui, "Heat release", 0, 6, smoke.heat_release)}
+                    {slider!(ui, "Soot from burn", 0, 4, smoke.smoke_from_burn)}
+                    {slider!(ui, "Ignition temp", 0, 2, smoke.ignition_temp)}
+                    {slider!(ui, "Cooling", 0, 6, smoke.cooling)}
+                    {slider!(ui, "Smoke fade", 0, 3, smoke.smoke_dissipation)}
+                    {slider!(ui, "Fuel fade", 0, 6, smoke.fuel_dissipation)}
+                </Fold>
+                <Fold title="Forces" key="fire.forces">
+                    {slider!(ui, "Buoyancy", 0, 15, smoke.buoyancy)}
+                    {slider!(ui, "Smoke weight", 0, 3, smoke.smoke_weight)}
+                    {slider!(ui, "Vorticity", 0, 30, smoke.vorticity)}
+                    {slider!(ui, "Damping", 0, 2, smoke.velocity_damping)}
+                    {vec3!(ui, "Wind", smoke.wind)}
+                    {slider!(ui, "Pressure iterations", 4, 100, smoke.pressure_iters, int)}
+                </Fold>
+                <Fold title="Shading" key="fire.shading">
+                    {slider!(ui, "Flame intensity", 0, 30, smoke.flame_intensity)}
+                    {slider!(ui, "Temperature scale", 0.05, 3.0, smoke.temperature_scale)}
+                    {slider!(ui, "Smoke density", 0, 100, smoke.smoke_absorption)}
+                    {color!(ui, "Smoke colour", smoke.smoke_color)}
+                    {slider!(ui, "Fire lights smoke", 0, 2, smoke.self_illumination)}
+                    {slider!(ui, "Shadow density", 0, 4, smoke.shadow_density)}
+                    {slider!(ui, "Quality (steps)", 32, 512, smoke.max_steps, int)}
+                </Fold>
             </div>
         </Section>
     }
@@ -89,58 +94,63 @@ fn Water(ui: Ui) -> impl IntoView {
     let transfer = Signal::derive(move || ui.scene.with(|s| s.water.transfer));
     let look = Signal::derive(move || ui.scene.with(|s| s.water.look));
     view! {
-        <Section title="Water" accent="#3d9bff">
+        <Section title="Water" key="water" accent="#3d9bff">
             {switch!(ui, "Enabled", water.enabled)}
             <div class="group" class:off=move || !on.get()>
-                <Sub title="Domain" />
-                {vec3!(ui, "Resolution", water.res, int)}
-                {number!(ui, "Cell size", water.cell_size, unit = " m")}
-                {vec3!(ui, "Position", water.box_min)}
-                {number!(ui, "Max particles", water.max_particles, int)}
-                <Sub title="Solver" />
-                <Choice
-                    label="Transfer"
-                    options=vec![(Transfer::Apic, "APIC"), (Transfer::Flip, "FLIP")]
-                    value=transfer
-                    on_change=Callback::new(move |t| ui.edit(|s| s.water.transfer = t))
-                />
-                <Show when=move || transfer.get() == Transfer::Flip>
-                    {slider!(ui, "FLIP / PIC", 0, 1, water.flip_ratio)}
-                </Show>
-                {slider!(ui, "Gravity", 0, 30, water.gravity)}
-                {slider!(ui, "Pressure iterations", 4, 150, water.pressure_iters, int)}
-                {slider!(ui, "Volume keep", 0, 0.3, water.density_correction)}
-                <Sub title="Sources" />
-                <Sources ui=ui />
-                <Sub title="Whitewater" />
-                {switch!(ui, "Spray", water.spray_enabled)}
-                {slider!(ui, "Spray speed", 0.2, 10.0, water.spray_threshold, unit = " m/s")}
-                {slider!(ui, "Spray amount", 0, 0.5, water.spray_amount)}
-                {slider!(ui, "Air drag", 0, 5, water.spray_drag)}
-                {slider!(ui, "Lifetime", 0.1, 5.0, water.spray_lifetime, unit = " s")}
-                {slider!(ui, "Foam speed", 0.1, 8.0, water.foam_threshold)}
-                {slider!(ui, "Foam decay", 0, 8, water.foam_decay)}
-                <Sub title="Shading" />
-                <Choice
-                    label="Look"
-                    options=vec![(WaterLook::Surface, "Surface"), (WaterLook::Particles, "Particles")]
-                    value=look
-                    on_change=Callback::new(move |l| ui.edit(|s| s.water.look = l))
-                />
-                <Show when=move || look.get() == WaterLook::Surface>
-                    {slider!(ui, "Smoothing passes", 0, 6, water.smoothing_passes, int)}
-                    {slider!(ui, "Smoothing radius", 0.5, 8.0, water.smoothing_radius)}
-                    {slider!(ui, "Depth blend", 0.5, 10.0, water.smoothing_depth)}
-                    {slider!(ui, "Refraction", 0, 4, water.refraction)}
-                    {slider!(ui, "Absorption", 0, 20, water.absorption)}
-                    {slider!(ui, "Thickness scale", 0.1, 4.0, water.thickness_scale)}
-                </Show>
-                {color!(ui, "Deep colour", water.deep_color)}
-                {color!(ui, "Shallow colour", water.shallow_color)}
-                {color!(ui, "Foam colour", water.foam_color)}
-                {slider!(ui, "Foam strength", 0, 2, water.foam_strength)}
-                {slider!(ui, "Particle size", 0.3, 3.0, water.particle_size)}
-                {slider!(ui, "Spray size", 0.1, 2.0, water.spray_size)}
+                <Fold title="Domain" key="water.domain">
+                    {vec3!(ui, "Resolution", water.res, int)}
+                    {number!(ui, "Cell size", water.cell_size, unit = " m")}
+                    {vec3!(ui, "Position", water.box_min)}
+                    {number!(ui, "Max particles", water.max_particles, int)}
+                </Fold>
+                <Fold title="Solver" key="water.solver">
+                    <Choice
+                        label="Transfer"
+                        options=vec![(Transfer::Apic, "APIC"), (Transfer::Flip, "FLIP")]
+                        value=transfer
+                        on_change=Callback::new(move |t| ui.edit(|s| s.water.transfer = t))
+                    />
+                    <Show when=move || transfer.get() == Transfer::Flip>
+                        {slider!(ui, "FLIP / PIC", 0, 1, water.flip_ratio)}
+                    </Show>
+                    {slider!(ui, "Gravity", 0, 30, water.gravity)}
+                    {slider!(ui, "Pressure iterations", 4, 150, water.pressure_iters, int)}
+                    {slider!(ui, "Volume keep", 0, 0.3, water.density_correction)}
+                </Fold>
+                <Fold title="Sources" key="water.sources" open=true>
+                    <Sources ui=ui />
+                </Fold>
+                <Fold title="Whitewater" key="water.whitewater">
+                    {switch!(ui, "Spray", water.spray_enabled)}
+                    {slider!(ui, "Spray speed", 0.2, 10.0, water.spray_threshold, unit = " m/s")}
+                    {slider!(ui, "Spray amount", 0, 0.5, water.spray_amount)}
+                    {slider!(ui, "Air drag", 0, 5, water.spray_drag)}
+                    {slider!(ui, "Lifetime", 0.1, 5.0, water.spray_lifetime, unit = " s")}
+                    {slider!(ui, "Foam speed", 0.1, 8.0, water.foam_threshold)}
+                    {slider!(ui, "Foam decay", 0, 8, water.foam_decay)}
+                </Fold>
+                <Fold title="Shading" key="water.shading">
+                    <Choice
+                        label="Look"
+                        options=vec![(WaterLook::Surface, "Surface"), (WaterLook::Particles, "Particles")]
+                        value=look
+                        on_change=Callback::new(move |l| ui.edit(|s| s.water.look = l))
+                    />
+                    <Show when=move || look.get() == WaterLook::Surface>
+                        {slider!(ui, "Smoothing passes", 0, 6, water.smoothing_passes, int)}
+                        {slider!(ui, "Smoothing radius", 0.5, 8.0, water.smoothing_radius)}
+                        {slider!(ui, "Depth blend", 0.5, 10.0, water.smoothing_depth)}
+                        {slider!(ui, "Refraction", 0, 4, water.refraction)}
+                        {slider!(ui, "Absorption", 0, 20, water.absorption)}
+                        {slider!(ui, "Thickness scale", 0.1, 4.0, water.thickness_scale)}
+                    </Show>
+                    {color!(ui, "Deep colour", water.deep_color)}
+                    {color!(ui, "Shallow colour", water.shallow_color)}
+                    {color!(ui, "Foam colour", water.foam_color)}
+                    {slider!(ui, "Foam strength", 0, 2, water.foam_strength)}
+                    {slider!(ui, "Particle size", 0.3, 3.0, water.particle_size)}
+                    {slider!(ui, "Spray size", 0.1, 2.0, water.spray_size)}
+                </Fold>
             </div>
         </Section>
     }
@@ -222,7 +232,7 @@ fn Sources(ui: Ui) -> impl IntoView {
 #[component]
 fn Render(ui: Ui) -> impl IntoView {
     view! {
-        <Section title="Render" open=false>
+        <Section title="Render" key="render" open=false>
             {slider!(ui, "Exposure", 0.1, 4.0, render.exposure)}
             {vec3!(ui, "Light direction", render.light_dir)}
             {color!(ui, "Background", render.background)}
@@ -236,7 +246,7 @@ fn Render(ui: Ui) -> impl IntoView {
 #[component]
 fn Camera(ui: Ui) -> impl IntoView {
     view! {
-        <Section title="Camera" open=false>
+        <Section title="Camera" key="camera" open=false>
             {vec3!(ui, "Target", camera.target)}
             {number!(ui, "Distance", camera.distance, unit = " m")}
             {slider!(ui, "Field of view", 10, 100, camera.fov_deg, unit = "\u{b0}")}
