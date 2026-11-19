@@ -1,0 +1,246 @@
+//! The parameter panel on the left: simulation, fire & smoke, water, render
+//! and camera settings. Every control edits the scene live.
+
+use crate::fields::{Choice, Hint, Section, Slider, Sub, Vec3Field};
+use crate::state::Ui;
+use crate::{color, number, slider, switch, vec3};
+use leptos::prelude::*;
+use tidefire_core::params::{Transfer, WaterBlock, WaterJet, WaterLook};
+
+#[component]
+pub fn Panels(ui: Ui) -> impl IntoView {
+    view! {
+        <aside class="panel">
+            <div class="scene-name">{move || ui.scene.with(|s| s.name.clone())}</div>
+            <Simulation ui=ui />
+            <Fire ui=ui />
+            <Water ui=ui />
+            <Render ui=ui />
+            <Camera ui=ui />
+        </aside>
+    }
+}
+
+#[component]
+fn Simulation(ui: Ui) -> impl IntoView {
+    view! {
+        <Section title="Simulation">
+            {slider!(ui, "Frame rate", 1, 120, fps, unit = " fps")}
+            {slider!(ui, "Substeps", 1, 16, substeps, int)}
+        </Section>
+    }
+}
+
+#[component]
+fn Fire(ui: Ui) -> impl IntoView {
+    let on = Signal::derive(move || ui.scene.with(|s| s.smoke.enabled));
+    view! {
+        <Section title="Fire & smoke" accent="#ff7a2f">
+            {switch!(ui, "Enabled", smoke.enabled)}
+            <div class="group" class:off=move || !on.get()>
+                <Sub title="Domain" />
+                {vec3!(ui, "Resolution", smoke.res, int)}
+                {number!(ui, "Voxel size", smoke.cell_size, unit = " m")}
+                {vec3!(ui, "Position", smoke.box_min)}
+                {switch!(ui, "Open top", smoke.open_top)}
+                <Sub title="Emitter" />
+                {switch!(ui, "Emitting", smoke.emitter_on)}
+                {vec3!(ui, "Position", smoke.emitter_pos)}
+                {slider!(ui, "Radius", 0.02, 1.0, smoke.emitter_radius)}
+                {slider!(ui, "Stop after", 0, 30, smoke.emitter_duration, unit = " s")}
+                {vec3!(ui, "Velocity", smoke.emit_velocity)}
+                {slider!(ui, "Turbulence", 0, 5, smoke.turbulence)}
+                {slider!(ui, "Noise scale", 0.02, 1.0, smoke.noise_scale)}
+                {slider!(ui, "Flicker", 0, 10, smoke.flicker_speed)}
+                {slider!(ui, "Fuel", 0, 60, smoke.fuel_rate)}
+                {slider!(ui, "Heat", 0, 20, smoke.temp_rate)}
+                {slider!(ui, "Smoke", 0, 10, smoke.smoke_rate)}
+                <Sub title="Combustion" />
+                {slider!(ui, "Burn rate", 0, 20, smoke.burn_rate)}
+                {slider!(ui, "Heat release", 0, 6, smoke.heat_release)}
+                {slider!(ui, "Soot from burn", 0, 4, smoke.smoke_from_burn)}
+                {slider!(ui, "Ignition temp", 0, 2, smoke.ignition_temp)}
+                {slider!(ui, "Cooling", 0, 6, smoke.cooling)}
+                {slider!(ui, "Smoke fade", 0, 3, smoke.smoke_dissipation)}
+                {slider!(ui, "Fuel fade", 0, 6, smoke.fuel_dissipation)}
+                <Sub title="Forces" />
+                {slider!(ui, "Buoyancy", 0, 15, smoke.buoyancy)}
+                {slider!(ui, "Smoke weight", 0, 3, smoke.smoke_weight)}
+                {slider!(ui, "Vorticity", 0, 30, smoke.vorticity)}
+                {slider!(ui, "Damping", 0, 2, smoke.velocity_damping)}
+                {vec3!(ui, "Wind", smoke.wind)}
+                {slider!(ui, "Pressure iterations", 4, 100, smoke.pressure_iters, int)}
+                <Sub title="Shading" />
+                {slider!(ui, "Flame intensity", 0, 30, smoke.flame_intensity)}
+                {slider!(ui, "Temperature scale", 0.05, 3.0, smoke.temperature_scale)}
+                {slider!(ui, "Smoke density", 0, 100, smoke.smoke_absorption)}
+                {color!(ui, "Smoke colour", smoke.smoke_color)}
+                {slider!(ui, "Fire lights smoke", 0, 2, smoke.self_illumination)}
+                {slider!(ui, "Shadow density", 0, 4, smoke.shadow_density)}
+                {slider!(ui, "Quality (steps)", 32, 512, smoke.max_steps, int)}
+            </div>
+        </Section>
+    }
+}
+
+#[component]
+fn Water(ui: Ui) -> impl IntoView {
+    let on = Signal::derive(move || ui.scene.with(|s| s.water.enabled));
+    let transfer = Signal::derive(move || ui.scene.with(|s| s.water.transfer));
+    let look = Signal::derive(move || ui.scene.with(|s| s.water.look));
+    view! {
+        <Section title="Water" accent="#3d9bff">
+            {switch!(ui, "Enabled", water.enabled)}
+            <div class="group" class:off=move || !on.get()>
+                <Sub title="Domain" />
+                {vec3!(ui, "Resolution", water.res, int)}
+                {number!(ui, "Cell size", water.cell_size, unit = " m")}
+                {vec3!(ui, "Position", water.box_min)}
+                {number!(ui, "Max particles", water.max_particles, int)}
+                <Sub title="Solver" />
+                <Choice
+                    label="Transfer"
+                    options=vec![(Transfer::Apic, "APIC"), (Transfer::Flip, "FLIP")]
+                    value=transfer
+                    on_change=Callback::new(move |t| ui.edit(|s| s.water.transfer = t))
+                />
+                <Show when=move || transfer.get() == Transfer::Flip>
+                    {slider!(ui, "FLIP / PIC", 0, 1, water.flip_ratio)}
+                </Show>
+                {slider!(ui, "Gravity", 0, 30, water.gravity)}
+                {slider!(ui, "Pressure iterations", 4, 150, water.pressure_iters, int)}
+                {slider!(ui, "Volume keep", 0, 0.3, water.density_correction)}
+                <Sub title="Sources" />
+                <Sources ui=ui />
+                <Sub title="Whitewater" />
+                {switch!(ui, "Spray", water.spray_enabled)}
+                {slider!(ui, "Spray speed", 0.2, 10.0, water.spray_threshold, unit = " m/s")}
+                {slider!(ui, "Spray amount", 0, 0.5, water.spray_amount)}
+                {slider!(ui, "Air drag", 0, 5, water.spray_drag)}
+                {slider!(ui, "Lifetime", 0.1, 5.0, water.spray_lifetime, unit = " s")}
+                {slider!(ui, "Foam speed", 0.1, 8.0, water.foam_threshold)}
+                {slider!(ui, "Foam decay", 0, 8, water.foam_decay)}
+                <Sub title="Shading" />
+                <Choice
+                    label="Look"
+                    options=vec![(WaterLook::Surface, "Surface"), (WaterLook::Particles, "Particles")]
+                    value=look
+                    on_change=Callback::new(move |l| ui.edit(|s| s.water.look = l))
+                />
+                <Show when=move || look.get() == WaterLook::Surface>
+                    {slider!(ui, "Smoothing passes", 0, 6, water.smoothing_passes, int)}
+                    {slider!(ui, "Smoothing radius", 0.5, 8.0, water.smoothing_radius)}
+                    {slider!(ui, "Depth blend", 0.5, 10.0, water.smoothing_depth)}
+                    {slider!(ui, "Refraction", 0, 4, water.refraction)}
+                    {slider!(ui, "Absorption", 0, 20, water.absorption)}
+                    {slider!(ui, "Thickness scale", 0.1, 4.0, water.thickness_scale)}
+                </Show>
+                {color!(ui, "Deep colour", water.deep_color)}
+                {color!(ui, "Shallow colour", water.shallow_color)}
+                {color!(ui, "Foam colour", water.foam_color)}
+                {slider!(ui, "Foam strength", 0, 2, water.foam_strength)}
+                {slider!(ui, "Particle size", 0.3, 3.0, water.particle_size)}
+                {slider!(ui, "Spray size", 0.1, 2.0, water.spray_size)}
+            </div>
+        </Section>
+    }
+}
+
+/// Fill blocks and jets: a list that can grow and shrink.
+#[component]
+fn Sources(ui: Ui) -> impl IntoView {
+    let blocks = move || (0..ui.scene.with(|s| s.water.blocks.len())).collect::<Vec<_>>();
+    let jets = move || (0..ui.scene.with(|s| s.water.jets.len())).collect::<Vec<_>>();
+    let block_vec = move |i: usize, f: fn(&WaterBlock) -> [f32; 3], set: fn(&mut WaterBlock, [f32; 3])| {
+        (
+            Signal::derive(move || ui.scene.with(|s| s.water.blocks.get(i).map(f).unwrap_or_default())),
+            Callback::new(move |v| ui.edit(|s| if let Some(b) = s.water.blocks.get_mut(i) { set(b, v) })),
+        )
+    };
+    let jet_vec = move |i: usize, f: fn(&WaterJet) -> [f32; 3], set: fn(&mut WaterJet, [f32; 3])| {
+        (
+            Signal::derive(move || ui.scene.with(|s| s.water.jets.get(i).map(f).unwrap_or_default())),
+            Callback::new(move |v| ui.edit(|s| if let Some(j) = s.water.jets.get_mut(i) { set(j, v) })),
+        )
+    };
+    let jet_f = move |i: usize, f: fn(&WaterJet) -> f32, set: fn(&mut WaterJet, f32)| {
+        (
+            Signal::derive(move || ui.scene.with(|s| s.water.jets.get(i).map(f).unwrap_or_default())),
+            Callback::new(move |v| ui.edit(|s| if let Some(j) = s.water.jets.get_mut(i) { set(j, v) })),
+        )
+    };
+    view! {
+        <For each=blocks key=|i| *i let:i>
+            {
+                let (mn, set_mn) = block_vec(i, |b| b.min, |b, v| b.min = v);
+                let (mx, set_mx) = block_vec(i, |b| b.max, |b, v| b.max = v);
+                let (vel, set_vel) = block_vec(i, |b| b.velocity, |b, v| b.velocity = v);
+                view! {
+                    <div class="item">
+                        <div class="item-head">
+                            <span>{format!("Fill block {}", i + 1)}</span>
+                            <button class="x" title="Remove" on:click=move |_| ui.edit(|s| { if i < s.water.blocks.len() { s.water.blocks.remove(i); } })>"\u{2715}"</button>
+                        </div>
+                        <Vec3Field label="Min" value=mn on_change=set_mn />
+                        <Vec3Field label="Max" value=mx on_change=set_mx />
+                        <Vec3Field label="Velocity" value=vel on_change=set_vel />
+                    </div>
+                }
+            }
+        </For>
+        <For each=jets key=|i| *i let:i>
+            {
+                let (pos, set_pos) = jet_vec(i, |j| j.pos, |j, v| j.pos = v);
+                let (vel, set_vel) = jet_vec(i, |j| j.velocity, |j, v| j.velocity = v);
+                let (rad, set_rad) = jet_f(i, |j| j.radius, |j, v| j.radius = v);
+                let (dur, set_dur) = jet_f(i, |j| j.duration, |j, v| j.duration = v);
+                let enabled = Signal::derive(move || ui.scene.with(|s| s.water.jets.get(i).is_some_and(|j| j.enabled)));
+                view! {
+                    <div class="item">
+                        <div class="item-head">
+                            <button class="switch small" class:on=move || enabled.get() title="On / off"
+                                on:click=move |_| ui.edit(|s| if let Some(j) = s.water.jets.get_mut(i) { j.enabled = !j.enabled })><i></i></button>
+                            <span>{format!("Jet {}", i + 1)}</span>
+                            <button class="x" title="Remove" on:click=move |_| ui.edit(|s| { if i < s.water.jets.len() { s.water.jets.remove(i); } })>"\u{2715}"</button>
+                        </div>
+                        <Vec3Field label="Position" value=pos on_change=set_pos />
+                        <Slider label="Radius" min=0.01 max=0.4 value=rad on_change=set_rad />
+                        <Vec3Field label="Velocity" value=vel on_change=set_vel />
+                        <Slider label="Stop after" min=0.0 max=60.0 unit=" s" value=dur on_change=set_dur />
+                    </div>
+                }
+            }
+        </For>
+        <div class="add-row">
+            <button class="btn" on:click=move |_| ui.edit(|s| s.water.blocks.push(WaterBlock::default()))>"+ Block"</button>
+            <button class="btn" on:click=move |_| ui.edit(|s| s.water.jets.push(WaterJet { enabled: true, ..Default::default() }))>"+ Jet"</button>
+        </div>
+        <Hint text="Blocks fill when the simulation resets; jets emit every frame." />
+    }
+}
+
+#[component]
+fn Render(ui: Ui) -> impl IntoView {
+    view! {
+        <Section title="Render" open=false>
+            {slider!(ui, "Exposure", 0.1, 4.0, render.exposure)}
+            {vec3!(ui, "Light direction", render.light_dir)}
+            {color!(ui, "Background", render.background)}
+            {switch!(ui, "Transparent background", render.transparent_background)}
+            {switch!(ui, "Ground", render.show_ground)}
+            {switch!(ui, "Domain boxes", render.show_bounds)}
+        </Section>
+    }
+}
+
+#[component]
+fn Camera(ui: Ui) -> impl IntoView {
+    view! {
+        <Section title="Camera" open=false>
+            {vec3!(ui, "Target", camera.target)}
+            {number!(ui, "Distance", camera.distance, unit = " m")}
+            {slider!(ui, "Field of view", 10, 100, camera.fov_deg, unit = "\u{b0}")}
+            <Hint text="In the viewport: drag to orbit, right or middle drag to pan, wheel to zoom." />
+        </Section>
+    }
+}

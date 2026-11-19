@@ -19,11 +19,11 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q mesa-vulkan-drivers libvulkan1
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked -p tidefire-cli
       - name: Render presets and compare with references
         env:
           WGPU_BACKEND: vulkan
-        run: ./target/release/tidefire --visual-test tests/visual
+        run: ./target/release/tidefire-cli --visual-test tests/visual
       - name: Upload renders and diffs
         if: failure()
         uses: actions/upload-artifact@v4

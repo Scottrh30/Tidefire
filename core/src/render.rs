@@ -751,3 +751,112 @@ fn push_box(out: &mut Vec<LineV>, a: Vec3, b: Vec3, color: [f32; 4]) {
         out.push(LineV { pos: c(x1 == 1, y1 == 1, z1 == 1), color });
     }
 }
+
+/// Draws a finished `RenderTarget` onto a window or canvas surface.
+pub struct Presenter {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    ubuf: wgpu::Buffer,
+    pub format: wgpu::TextureFormat,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PresentU {
+    flags: [f32; 4],
+}
+
+impl Presenter {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let fs = wgpu::ShaderStages::FRAGMENT;
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("present.layout"),
+            entries: &[
+                gpu::uniform(0, fs),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: fs,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: fs,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("present.pl"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let module = gpu::shader(device, "present.wgsl", include_str!("shaders/present.wgsl"));
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("present"),
+            layout: Some(&pl),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("present.sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let ubuf = gpu::uniform_buffer(device, "present.params", &PresentU::zeroed());
+        Self { pipeline, layout, sampler, ubuf, format }
+    }
+
+    /// Draws `src` over the whole of `dst`. `checker` shows a checkerboard
+    /// where the frame is transparent.
+    pub fn present(&self, device: &wgpu::Device, queue: &wgpu::Queue, src: &RenderTarget, dst: &wgpu::TextureView, checker: bool) {
+        let u = PresentU { flags: [if self.format.is_srgb() { 0.0 } else { 1.0 }, if checker { 1.0 } else { 0.0 }, 0.0, 0.0] };
+        queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
+        let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: self.ubuf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&src.color_view) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+            ],
+        });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("present") });
+        {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("present"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: dst,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        queue.submit([enc.finish()]);
+    }
+}

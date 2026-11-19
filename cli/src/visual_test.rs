@@ -19,10 +19,10 @@
 //! water absorption, foam strength, smoke colour and smoothing off (the smallest
 //! was caught at colour 2.6, histogram 0.13, texture 20%).
 
-use crate::engine::{self, Engine};
-use crate::gpu::wgpu;
-use crate::params;
-use crate::render::RenderTarget;
+use tidefire_core::engine::{self, Engine};
+use tidefire_core::params;
+use tidefire_core::render::RenderTarget;
+use tidefire_core::wgpu;
 use image::{imageops, RgbaImage};
 use std::fmt::Write as _;
 use std::path::Path;

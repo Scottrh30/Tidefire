@@ -2,4 +2,10 @@ target/
 /tidefire_out/
 *.png
 !tests/visual/*.png
+!src-tauri/icons/*.png
 tests/visual/out/
+app/dist/
+node_modules/
+package.json
+package-lock.json
+preview/

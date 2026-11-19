@@ -1,0 +1,17 @@
+[package]
+name = "tidefire-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tidefire's engine: GPU fire/smoke and water solvers, renderer and scene presets (native and WebAssembly)"
+
+[dependencies]
+wgpu.workspace = true
+bytemuck.workspace = true
+glam.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# std::time::Instant panics in the browser; this one works in both.
+web-time = "1"
+futures-channel = "0.3"

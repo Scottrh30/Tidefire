@@ -5,8 +5,7 @@ use crate::params::Scene;
 use crate::render::{RenderTarget, Renderer};
 use crate::smoke::SmokeSim;
 use crate::water::WaterSim;
-use std::path::Path;
-use std::time::Instant;
+use web_time::Instant;
 
 pub struct Engine {
     pub device: wgpu::Device,
@@ -110,8 +109,14 @@ impl Engine {
 
 }
 
-/// Copy a render target back to the CPU as straight-alpha RGBA8 (sRGB).
-pub fn read_target(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget) -> image::RgbaImage {
+struct Readback {
+    buf: wgpu::Buffer,
+    bpr: u32,
+    width: u32,
+    height: u32,
+}
+
+fn start_readback(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget) -> Readback {
     let bpr = (t.width * 4).div_ceil(256) * 256;
     let buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("readback"),
@@ -129,16 +134,18 @@ pub fn read_target(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget)
         wgpu::Extent3d { width: t.width, height: t.height, depth_or_array_layers: 1 },
     );
     queue.submit([enc.finish()]);
-    buf.map_async(wgpu::MapMode::Read, .., |_| {});
-    let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
-    let data = buf.get_mapped_range(..).expect("map readback");
-    let mut img = image::RgbaImage::new(t.width, t.height);
-    for y in 0..t.height {
-        let row = &data[(y * bpr) as usize..(y * bpr + t.width * 4) as usize];
-        for x in 0..t.width {
+    Readback { buf, bpr, width: t.width, height: t.height }
+}
+
+fn finish_readback(r: Readback) -> image::RgbaImage {
+    let data = r.buf.get_mapped_range(..).expect("map readback");
+    let mut img = image::RgbaImage::new(r.width, r.height);
+    for y in 0..r.height {
+        let row = &data[(y * r.bpr) as usize..(y * r.bpr + r.width * 4) as usize];
+        for x in 0..r.width {
             let p = &row[(x * 4) as usize..(x * 4 + 4) as usize];
             let a = p[3];
-            // stored colour is premultiplied (in sRGB space after encoding); undo for PNG
+            // stored colour is premultiplied; undo it for PNG (straight alpha)
             let un = |c: u8| -> u8 {
                 if a == 0 || a == 255 { c } else { ((c as f32 * 255.0 / a as f32).round()).min(255.0) as u8 }
             };
@@ -146,10 +153,59 @@ pub fn read_target(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget)
         }
     }
     drop(data);
-    buf.unmap();
+    r.buf.unmap();
     img
 }
 
-pub fn frame_path(dir: &Path, prefix: &str, frame: u32) -> std::path::PathBuf {
-    dir.join(format!("{prefix}_{frame:05}.png"))
+/// Copy a render target back to the CPU as straight-alpha RGBA8 (sRGB), blocking
+/// until the GPU is done. Native only (a browser can't block on the GPU).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn read_target(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget) -> image::RgbaImage {
+    let r = start_readback(device, queue, t);
+    r.buf.map_async(wgpu::MapMode::Read, .., |_| {});
+    let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+    finish_readback(r)
+}
+
+/// Same as `read_target`, without blocking: works in the browser (WebGPU) too.
+pub async fn read_target_async(device: &wgpu::Device, queue: &wgpu::Queue, t: &RenderTarget) -> Result<image::RgbaImage, String> {
+    let r = start_readback(device, queue, t);
+    let (tx, rx) = futures_channel::oneshot::channel();
+    r.buf.map_async(wgpu::MapMode::Read, .., move |res| {
+        let _ = tx.send(res);
+    });
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+    match rx.await {
+        Ok(Ok(())) => Ok(finish_readback(r)),
+        Ok(Err(e)) => Err(format!("could not read the frame back from the GPU: {e}")),
+        Err(_) => Err("the GPU readback was cancelled".into()),
+    }
+}
+
+/// `<prefix>_sequence.json`, written next to an exported PNG sequence so
+/// Reelforge (or anything else) knows its frame rate, size and file pattern.
+pub fn sequence_manifest(scene: &crate::params::Scene) -> String {
+    let e = &scene.export;
+    let m = serde_json::json!({
+        "generator": "Tidefire",
+        "scene": scene.name,
+        "fps": scene.fps,
+        "frames": e.frames,
+        "start_frame": e.start_frame,
+        "width": e.width,
+        "height": e.height,
+        "alpha": scene.render.transparent_background,
+        "pattern": format!("{}_%05d.png", e.prefix),
+    });
+    serde_json::to_string_pretty(&m).unwrap()
+}
+
+pub fn manifest_name(prefix: &str) -> String {
+    format!("{prefix}_sequence.json")
+}
+
+/// File name of one exported frame.
+pub fn frame_name(prefix: &str, frame: u32) -> String {
+    format!("{prefix}_{frame:05}.png")
 }

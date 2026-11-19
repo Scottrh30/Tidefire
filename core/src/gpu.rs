@@ -1,6 +1,6 @@
 //! Small wgpu helpers shared by the simulators and renderer.
 
-pub use eframe::wgpu;
+pub use wgpu;
 use wgpu::util::DeviceExt;
 
 pub fn storage(binding: u32, read_only: bool, vis: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {

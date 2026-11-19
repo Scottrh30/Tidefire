@@ -1,0 +1,17 @@
+[package]
+name = "tidefire-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tidefire's command line tool: headless batch renders and visual regression tests"
+
+[[bin]]
+name = "tidefire-cli"
+path = "src/main.rs"
+
+[dependencies]
+tidefire-core = { path = "../core" }
+wgpu.workspace = true
+image.workspace = true
+serde_json.workspace = true
+pollster = "0.4"

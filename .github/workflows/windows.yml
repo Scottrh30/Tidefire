@@ -1,11 +1,18 @@
+# Builds Tidefire for Windows on every push (or with "Run workflow"):
+#   Tidefire.exe          the app (Tauri + Leptos; the engine runs on the GPU through WebGPU in WebView2)
+#   Tidefire-setup.exe    its installer
+#   tidefire-cli.exe      headless batch renders and visual tests
+# Builds of main are published as the "latest" release. A second job opens the
+# interface in Chromium (software WebGPU) and publishes screenshots as the
+# "preview" release, so the interface can be checked without a Windows machine.
 name: Windows build
 
 on:
   push:
-    branches: [main]
-    tags: ["v*"]
-  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -13,23 +20,80 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Build release
-        run: cargo build --release --locked
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      - name: Build the command line tool
+        run: cargo build --release --locked -p tidefire-cli
+      - name: Build the Tauri app
+        run: npx --yes @tauri-apps/cli@2 build
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/tidefire.exe dist/
-          Copy-Item README.md dist/
-          Compress-Archive -Path dist/* -DestinationPath tidefire-windows-x64.zip -Force
+          Copy-Item target/release/tidefire.exe dist/Tidefire.exe
+          Copy-Item target/release/tidefire-cli.exe dist/tidefire-cli.exe
+          $setup = Get-ChildItem target/release/bundle/nsis/*.exe | Select-Object -First 1
+          Copy-Item $setup.FullName dist/Tidefire-setup.exe
+          Get-ChildItem dist
+      # The release below is the real download; a full artifact store must not block it.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: tidefire-windows-x64
-          path: tidefire-windows-x64.zip
+          path: dist/
           retention-days: 7
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          files: tidefire-windows-x64.zip
+          tag_name: latest
+          name: Tidefire (latest build)
+          body: |
+            Windows builds of the newest commit on main.
+            - Tidefire.exe: the app (Tauri + Leptos). Run it directly; it uses WebView2 (built into Windows 10 and 11) and needs a GPU with WebGPU support.
+            - Tidefire-setup.exe: installs it with a Start menu entry and .tidefire file association.
+            - tidefire-cli.exe: headless renders (`--headless`) and visual tests (`--visual-test`).
+          prerelease: false
+          make_latest: true
+          files: |
+            dist/Tidefire.exe
+            dist/Tidefire-setup.exe
+            dist/tidefire-cli.exe
+
+  web-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      - name: Build the web interface
+        working-directory: app
+        run: trunk build --release
+      - name: Screenshots
+        run: |
+          npm init -y > /dev/null
+          npm install playwright@1 > /dev/null
+          npx playwright install --with-deps chromium > /dev/null
+          (cd app/dist && python3 -m http.server 8080 > /dev/null 2>&1 &)
+          sleep 2
+          node ci/preview.mjs http://localhost:8080/ preview
+          ls preview
+      - name: Publish preview
+        if: always() && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: preview
+          name: Interface preview (screenshots)
+          body: Screenshots of the newest web build (${{ github.sha }}), taken in Chromium on Linux with software WebGPU.
+          prerelease: true
+          make_latest: false
+          files: preview/*

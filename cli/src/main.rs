@@ -1,22 +1,13 @@
-//! Tidefire — real-time GPU fire, smoke and water VFX.
+//! Tidefire's command line tool (the app itself is the Tauri window).
 //!
-//! GUI:       tidefire
-//! Headless:  tidefire --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR]
-//!                     [--transparent] [--stats]
+//! Headless render:  tidefire-cli --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR]
+//!                                [--transfer apic|flip] [--transparent] [--stats]
+//! Visual tests:     tidefire-cli --visual-test tests/visual [--update]
 
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
-
-mod app;
-mod engine;
-mod gpu;
-mod params;
-mod render;
-mod smoke;
 mod visual_test;
-mod water;
 
-use gpu::wgpu;
 use std::path::PathBuf;
+use tidefire_core::{engine, params, render, wgpu};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -43,22 +34,11 @@ fn main() {
         }
         return;
     }
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("Tidefire {}\n\nUsage:\n  tidefire\n  tidefire --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR] [--transfer apic|flip] [--transparent] [--stats]\n\nPresets: {}", env!("CARGO_PKG_VERSION"), params::PRESETS.join(", "));
-        return;
-    }
-    let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Tidefire - fire & water VFX")
-            .with_inner_size([1500.0, 900.0])
-            .with_min_inner_size([900.0, 560.0]),
-        renderer: eframe::Renderer::Wgpu,
-        ..Default::default()
-    };
-    if let Err(e) = eframe::run_native("Tidefire", options, Box::new(|cc| Ok(Box::new(app::TidefireApp::new(cc))))) {
-        eprintln!("tidefire: {e}");
-        std::process::exit(1);
-    }
+    println!(
+        "Tidefire {} command line tool\n\nUsage:\n  tidefire-cli --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR] [--transfer apic|flip] [--transparent] [--stats]\n  tidefire-cli --visual-test DIR [--update]\n\nPresets: {}",
+        env!("CARGO_PKG_VERSION"),
+        params::PRESETS.join(", ")
+    );
 }
 
 fn arg<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
@@ -99,7 +79,7 @@ fn headless(args: &[String]) -> Result<(), String> {
 
     let frames = scene.export.frames;
     let (w, h) = (scene.export.width, scene.export.height);
-    app::write_manifest(&out, &scene).map_err(|e| e.to_string())?;
+    std::fs::write(out.join(engine::manifest_name(&scene.export.prefix)), engine::sequence_manifest(&scene)).map_err(|e| e.to_string())?;
     let prefix = scene.export.prefix.clone();
     let mut eng = engine::Engine::new(device, queue, scene);
     let target = render::RenderTarget::new(&eng.device, w, h);
@@ -108,7 +88,7 @@ fn headless(args: &[String]) -> Result<(), String> {
         eng.step_frame();
         eng.render(&target, true);
         let img = engine::read_target(&eng.device, &eng.queue, &target);
-        let path = engine::frame_path(&out, &prefix, f);
+        let path = out.join(engine::frame_name(&prefix, f));
         img.save(&path).map_err(|e| e.to_string())?;
         if stats {
             eprintln!("frame {f:4}  particles {:7}  step {:.1} ms", eng.particle_count(), eng.last_step_ms);
