@@ -7,6 +7,7 @@ pub mod gpu;
 pub mod params;
 pub mod render;
 pub mod smoke;
+pub mod sparks;
 pub mod water;
 
 pub use wgpu;

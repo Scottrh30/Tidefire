@@ -4,6 +4,7 @@ use crate::gpu::wgpu;
 use crate::params::Scene;
 use crate::render::{RenderTarget, Renderer};
 use crate::smoke::SmokeSim;
+use crate::sparks::SparkSim;
 use crate::water::WaterSim;
 use web_time::Instant;
 
@@ -13,12 +14,14 @@ pub struct Engine {
     pub scene: Scene,
     pub smoke: Option<SmokeSim>,
     pub water: Option<WaterSim>,
+    pub sparks: Option<SparkSim>,
     pub renderer: Renderer,
     pub frame: u32,
     pub time: f32,
     pub last_step_ms: f32,
     built_smoke: Option<([u32; 3],)>,
     built_water: Option<([u32; 3], u32, u32, bool)>,
+    built_sparks: Option<u32>,
 }
 
 impl Engine {
@@ -30,12 +33,14 @@ impl Engine {
             scene,
             smoke: None,
             water: None,
+            sparks: None,
             renderer,
             frame: 0,
             time: 0.0,
             last_step_ms: 0.0,
             built_smoke: None,
             built_water: None,
+            built_sparks: None,
         };
         e.rebuild_if_needed();
         e.reset();
@@ -59,6 +64,13 @@ impl Engine {
             self.built_water = want_w;
             rebuilt = true;
         }
+        let k = &self.scene.sparks;
+        let want_k = k.enabled.then_some(k.max_particles);
+        if want_k != self.built_sparks {
+            self.sparks = want_k.map(|_| SparkSim::new(&self.device, k));
+            self.built_sparks = want_k;
+            rebuilt = true;
+        }
         rebuilt
     }
 
@@ -71,6 +83,9 @@ impl Engine {
         }
         if let Some(w) = &mut self.water {
             w.reset(&self.device, &self.queue, &self.scene.water);
+        }
+        if let Some(k) = &mut self.sparks {
+            k.reset(&self.device, &self.queue);
         }
     }
 
@@ -93,6 +108,10 @@ impl Engine {
             if let Some(w) = &mut self.water {
                 w.step(&self.device, &self.queue, &self.scene.water, dt, self.time);
             }
+            if let Some(k) = &mut self.sparks {
+                let smoke = self.smoke.as_ref().map(|s| (s, &self.scene.smoke));
+                k.step(&self.device, &self.queue, &self.scene.sparks, smoke, dt, self.time);
+            }
             self.time += dt;
         }
         self.frame += 1;
@@ -100,7 +119,17 @@ impl Engine {
     }
 
     pub fn render(&mut self, target: &RenderTarget, hide_helpers: bool) {
-        self.renderer.render(&self.device, &self.queue, target, &self.scene, self.smoke.as_ref(), self.water.as_ref(), hide_helpers);
+        self.renderer.render(
+            &self.device,
+            &self.queue,
+            target,
+            &self.scene,
+            self.smoke.as_ref(),
+            self.water.as_ref(),
+            self.sparks.as_ref(),
+            self.time,
+            hide_helpers,
+        );
     }
 
     pub fn particle_count(&self) -> u32 {

@@ -234,6 +234,181 @@ impl Default for WaterParams {
     }
 }
 
+/// Sparks (fast glowing streaks that fall, bounce and cool) and embers
+/// (glowing flecks carried up by the fire's smoke).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SparkParams {
+    pub enabled: bool,
+    /// Most sparks and embers alive at once.
+    pub max_particles: u32,
+    // ---- where they come from
+    /// Emit from the fire's emitter (follows its position and radius).
+    pub use_fire_emitter: bool,
+    pub emitter_pos: [f32; 3],
+    pub emitter_radius: f32,
+    /// Stop emitting after this many seconds (0 = forever).
+    pub duration: f32,
+    // ---- sparks
+    pub sparks: bool,
+    /// Sparks per second, emitted continuously.
+    pub spark_rate: f32,
+    /// Extra bursts of sparks ("pops"): how many per burst and the average gap between bursts.
+    pub burst_count: u32,
+    pub burst_interval: f32,
+    pub spark_direction: [f32; 3],
+    /// Cone half-angle around the direction, in degrees.
+    pub spark_spread: f32,
+    pub spark_speed: f32,
+    /// 0 = every spark at full speed, 1 = anywhere from 0 to full.
+    pub spark_speed_variation: f32,
+    pub spark_lifetime: f32,
+    pub spark_gravity: f32,
+    pub spark_drag: f32,
+    /// How much of their speed sparks keep when they hit the ground (0 = none).
+    pub spark_bounce: f32,
+    /// How strongly the smoke's currents push sparks around (0–1).
+    pub spark_follow_smoke: f32,
+    pub spark_size: f32,
+    /// Streak length, as seconds of motion blur.
+    pub spark_streak: f32,
+    pub spark_brightness: f32,
+    pub spark_hot_color: [f32; 3],
+    pub spark_cool_color: [f32; 3],
+    // ---- embers
+    pub embers: bool,
+    pub ember_rate: f32,
+    pub ember_lifetime: f32,
+    /// Initial upward speed.
+    pub ember_launch: f32,
+    /// Constant lift (m/s) on top of the smoke's currents.
+    pub ember_buoyancy: f32,
+    /// How strongly embers ride the smoke's currents (0–1).
+    pub ember_follow_smoke: f32,
+    /// Wandering, swirling motion.
+    pub ember_turbulence: f32,
+    pub ember_size: f32,
+    /// Flickers per second.
+    pub ember_flicker: f32,
+    pub ember_brightness: f32,
+    pub ember_hot_color: [f32; 3],
+    pub ember_cool_color: [f32; 3],
+}
+
+impl Default for SparkParams {
+    fn default() -> Self {
+        let mut p = SparkParams::preset("Campfire crackle").unwrap();
+        p.enabled = false;
+        p
+    }
+}
+
+pub const SPARK_PRESETS: &[&str] = &["Campfire crackle", "Bonfire embers", "Grinder sparks", "Forge", "Firefly drift"];
+
+impl SparkParams {
+    pub fn preset(name: &str) -> Option<Self> {
+        let base = SparkParams {
+            enabled: true,
+            max_particles: 60_000,
+            use_fire_emitter: true,
+            emitter_pos: [0.0, 0.3, 0.0],
+            emitter_radius: 0.2,
+            duration: 0.0,
+            sparks: true,
+            spark_rate: 25.0,
+            burst_count: 30,
+            burst_interval: 1.4,
+            spark_direction: [0.0, 1.0, 0.0],
+            spark_spread: 35.0,
+            spark_speed: 3.2,
+            spark_speed_variation: 0.6,
+            spark_lifetime: 1.1,
+            spark_gravity: 3.0,
+            spark_drag: 1.2,
+            spark_bounce: 0.3,
+            spark_follow_smoke: 0.4,
+            spark_size: 0.004,
+            spark_streak: 0.025,
+            spark_brightness: 3.0,
+            spark_hot_color: [1.0, 0.82, 0.45],
+            spark_cool_color: [0.85, 0.18, 0.03],
+            embers: true,
+            ember_rate: 40.0,
+            ember_lifetime: 3.0,
+            ember_launch: 0.6,
+            ember_buoyancy: 0.35,
+            ember_follow_smoke: 0.8,
+            ember_turbulence: 0.6,
+            ember_size: 0.01,
+            ember_flicker: 6.0,
+            ember_brightness: 3.5,
+            ember_hot_color: [1.0, 0.62, 0.2],
+            ember_cool_color: [0.6, 0.08, 0.02],
+        };
+        let mut p = base;
+        match name {
+            "Campfire crackle" => {}
+            "Bonfire embers" => {
+                p.spark_rate = 10.0;
+                p.burst_count = 18;
+                p.burst_interval = 2.5;
+                p.ember_rate = 160.0;
+                p.ember_lifetime = 4.5;
+                p.ember_buoyancy = 0.5;
+                p.ember_turbulence = 1.0;
+                p.ember_size = 0.011;
+            }
+            "Grinder sparks" => {
+                p.use_fire_emitter = false;
+                p.emitter_pos = [-0.6, 0.55, 0.0];
+                p.emitter_radius = 0.015;
+                p.spark_rate = 900.0;
+                p.burst_count = 0;
+                p.spark_direction = [1.0, 0.15, 0.0];
+                p.spark_spread = 14.0;
+                p.spark_speed = 7.0;
+                p.spark_speed_variation = 0.55;
+                p.spark_lifetime = 0.9;
+                p.spark_gravity = 9.81;
+                p.spark_drag = 0.6;
+                p.spark_bounce = 0.45;
+                p.spark_follow_smoke = 0.0;
+                p.spark_size = 0.0025;
+                p.spark_streak = 0.018;
+                p.spark_brightness = 3.5;
+                p.spark_hot_color = [1.0, 0.85, 0.5];
+                p.spark_cool_color = [1.0, 0.35, 0.04];
+                p.embers = false;
+            }
+            "Forge" => {
+                p.spark_rate = 60.0;
+                p.burst_count = 120;
+                p.burst_interval = 0.9;
+                p.spark_spread = 55.0;
+                p.spark_speed = 4.5;
+                p.spark_gravity = 6.0;
+                p.spark_bounce = 0.5;
+                p.ember_rate = 80.0;
+                p.spark_hot_color = [1.0, 0.9, 0.65];
+            }
+            "Firefly drift" => {
+                p.sparks = false;
+                p.ember_rate = 25.0;
+                p.ember_lifetime = 6.0;
+                p.ember_launch = 0.2;
+                p.ember_buoyancy = 0.12;
+                p.ember_follow_smoke = 0.3;
+                p.ember_turbulence = 1.6;
+                p.ember_flicker = 1.5;
+                p.ember_size = 0.012;
+                p.ember_brightness = 4.0;
+            }
+            _ => return None,
+        }
+        Some(p)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RenderParams {
@@ -298,6 +473,7 @@ pub struct Scene {
     pub substeps: u32,
     pub smoke: SmokeParams,
     pub water: WaterParams,
+    pub sparks: SparkParams,
     pub render: RenderParams,
     pub camera: CameraParams,
     pub export: ExportParams,
@@ -309,7 +485,7 @@ impl Default for Scene {
     }
 }
 
-pub const PRESETS: &[&str] = &["Campfire", "Fireball", "Dam Break", "Fountain", "Fire & Water"];
+pub const PRESETS: &[&str] = &["Campfire", "Bonfire", "Fireball", "Forge", "Grinder Sparks", "Dam Break", "Fountain", "Fire & Water"];
 
 pub fn preset(name: &str) -> Option<Scene> {
     let base = |name: &str| Scene {
@@ -318,6 +494,7 @@ pub fn preset(name: &str) -> Option<Scene> {
         substeps: 2,
         smoke: SmokeParams::default(),
         water: WaterParams::default(),
+        sparks: SparkParams::default(),
         render: RenderParams::default(),
         camera: CameraParams::default(),
         export: ExportParams::default(),
@@ -329,6 +506,44 @@ pub fn preset(name: &str) -> Option<Scene> {
             s.camera.target = [0.0, 0.75, 0.0];
             s.camera.distance = 3.3;
             s.camera.pitch = 0.18;
+        }
+        "Bonfire" => {
+            s.water.enabled = false;
+            s.smoke.res = [72, 112, 72];
+            s.smoke.box_min = [-1.125, 0.0, -1.125];
+            s.smoke.emitter_pos = [0.0, 0.22, 0.0];
+            s.smoke.emitter_radius = 0.4;
+            s.smoke.fuel_rate = 7.5;
+            s.smoke.temp_rate = 2.0;
+            s.smoke.flame_intensity = 6.0;
+            s.smoke.temperature_scale = 0.32;
+            s.smoke.turbulence = 1.4;
+            s.smoke.vorticity = 8.0;
+            s.sparks = SparkParams::preset("Bonfire embers").unwrap();
+            s.camera.target = [0.0, 1.05, 0.0];
+            s.camera.distance = 4.4;
+            s.camera.pitch = 0.16;
+        }
+        "Forge" => {
+            s.water.enabled = false;
+            s.smoke.emitter_pos = [0.0, 0.2, 0.0];
+            s.smoke.emitter_radius = 0.3;
+            s.smoke.fuel_rate = 7.0;
+            s.smoke.temp_rate = 2.4;
+            s.smoke.smoke_rate = 0.04;
+            s.sparks = SparkParams::preset("Forge").unwrap();
+            s.camera.target = [0.0, 0.7, 0.0];
+            s.camera.distance = 3.6;
+            s.camera.pitch = 0.2;
+        }
+        "Grinder Sparks" => {
+            s.water.enabled = false;
+            s.smoke.enabled = false;
+            s.sparks = SparkParams::preset("Grinder sparks").unwrap();
+            s.camera.target = [0.2, 0.35, 0.0];
+            s.camera.distance = 3.0;
+            s.camera.yaw = 0.35;
+            s.camera.pitch = 0.22;
         }
         "Fireball" => {
             s.water.enabled = false;

@@ -4,6 +4,7 @@
 use crate::gpu::{self, wgpu};
 use crate::params::{CameraParams, Scene, WaterLook};
 use crate::smoke::SmokeSim;
+use crate::sparks::SparkSim;
 use crate::water::WaterSim;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
@@ -33,6 +34,16 @@ struct VolU {
     smoke_color: [f32; 4],
     fire: [f32; 4],
     ambient: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SparkStyleU {
+    spark_hot: [f32; 4],
+    spark_cool: [f32; 4],
+    ember_hot: [f32; 4],
+    ember_cool: [f32; 4],
+    size: [f32; 4],
 }
 
 #[repr(C)]
@@ -174,6 +185,9 @@ pub struct Renderer {
     fluid_shade: wgpu::RenderPipeline,
     fluid_h: wgpu::Buffer,
     fluid_v: wgpu::Buffer,
+    spark_layout: wgpu::BindGroupLayout,
+    spark_pipe: wgpu::RenderPipeline,
+    spark_style: wgpu::Buffer,
     sampler: wgpu::Sampler,
     dummy_volume: wgpu::TextureView,
     dummy_storage: wgpu::Buffer,
@@ -382,6 +396,16 @@ impl Renderer {
         let fluid_h = gpu::uniform_buffer(device, "fluid.h", &FluidU::zeroed());
         let fluid_v = gpu::uniform_buffer(device, "fluid.v", &FluidU::zeroed());
 
+        // ---- sparks & embers: additive light, depth-tested, no depth writes
+        let spark_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sparks.draw.layout"),
+            entries: &[gpu::uniform(0, vf), gpu::uniform(1, vf), gpu::storage(2, true, wgpu::ShaderStages::VERTEX)],
+        });
+        let spark_pl = layout(&spark_layout);
+        let spark_mod = gpu::shader(device, "sparks_draw.wgsl", include_str!("shaders/sparks_draw.wgsl"));
+        let spark_pipe = pipe("sparks.draw", &spark_pl, &spark_mod, "vs_main", "fs_main", COLOR_FORMAT, depth_write(false), additive);
+        let spark_style = gpu::uniform_buffer(device, "sparks.style", &SparkStyleU::zeroed());
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("volume.sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -426,6 +450,9 @@ impl Renderer {
             fluid_shade,
             fluid_h,
             fluid_v,
+            spark_layout,
+            spark_pipe,
+            spark_style,
             sampler,
             dummy_volume: dummy.create_view(&Default::default()),
             dummy_storage,
@@ -441,6 +468,8 @@ impl Renderer {
         scene: &Scene,
         smoke: Option<&SmokeSim>,
         water: Option<&WaterSim>,
+        sparks: Option<&SparkSim>,
+        sim_time: f32,
         hide_helpers: bool,
     ) {
         self.time += 1.0 / 60.0;
@@ -600,6 +629,47 @@ impl Renderer {
             pass.set_pipeline(&self.volume);
             pass.set_bind_group(0, &vol_bind, &[]);
             pass.draw(0..3, 0..1);
+        }
+        if let Some(k) = sparks {
+            let kp = &scene.sparks;
+            let px_per_unit = target.height as f32 / (2.0 * (scene.camera.fov_deg.to_radians() * 0.5).tan());
+            let st = SparkStyleU {
+                spark_hot: [kp.spark_hot_color[0], kp.spark_hot_color[1], kp.spark_hot_color[2], kp.spark_brightness],
+                spark_cool: [kp.spark_cool_color[0], kp.spark_cool_color[1], kp.spark_cool_color[2], kp.spark_streak.max(0.0)],
+                ember_hot: [kp.ember_hot_color[0], kp.ember_hot_color[1], kp.ember_hot_color[2], kp.ember_brightness],
+                ember_cool: [kp.ember_cool_color[0], kp.ember_cool_color[1], kp.ember_cool_color[2], kp.ember_flicker],
+                size: [kp.spark_size, kp.ember_size, px_per_unit, sim_time],
+            };
+            queue.write_buffer(&self.spark_style, 0, bytemuck::bytes_of(&st));
+            let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.spark_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: self.cam_buf.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: self.spark_style.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: k.parts.as_entire_binding() },
+                ],
+            });
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("sparks"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target.color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &target.depth_view,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.spark_pipe);
+            pass.set_bind_group(0, &bind, &[]);
+            pass.draw(0..6, 0..k.max);
         }
         queue.submit([enc.finish()]);
     }

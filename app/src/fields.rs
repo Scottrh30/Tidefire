@@ -17,8 +17,10 @@ fn decimals_for(min: f32, max: f32) -> usize {
         1
     } else if span >= 1.0 {
         2
-    } else {
+    } else if span >= 0.1 {
         3
+    } else {
+        4
     }
 }
 

@@ -199,6 +199,11 @@ impl SmokeSim {
         self.frame = self.frame.wrapping_add(1);
     }
 
+    /// The velocity field (m/s per cell), for things carried by the smoke.
+    pub fn velocity(&self) -> &wgpu::Buffer {
+        &self.vel
+    }
+
     pub fn memory_bytes(&self) -> u64 {
         let cells = (self.res[0] * self.res[1] * self.res[2]) as u64;
         cells * (16 * 5 + 8 + 8)

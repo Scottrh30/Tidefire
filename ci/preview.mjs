@@ -68,6 +68,20 @@ await page.mouse.up();
 await wait(1500);
 await shot('04-orbit-paused');
 
+// Sparks & embers: Forge (fire + spark bursts) and Grinder Sparks, then the panel section.
+await preset('Forge');
+await play();
+log.push(`forge: ${await untilFrame(30, 120000)}`);
+await pause();
+await shot('04a-forge');
+await preset('Grinder Sparks');
+await play();
+log.push(`grinder: ${await untilFrame(30, 60000)}`);
+await pause();
+await page.locator('.section header', { hasText: 'Sparks' }).scrollIntoViewIfNeeded();
+await shot('04b-grinder-and-panel');
+await preset('Fire & Water');
+
 // Dropdowns: open Combustion (fire) and Whitewater (water), close Emitter.
 await page.locator('.fold-head', { hasText: 'Emitter' }).first().click();
 await page.locator('.fold-head', { hasText: 'Combustion' }).first().click();

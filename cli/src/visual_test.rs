@@ -48,14 +48,34 @@ const MAX_COVER: f32 = 0.15;
 struct Case {
     preset: &'static str,
     frames: u32,
+    /// Optional tweak on top of the preset, and the name the test goes by.
+    tweak: Option<(&'static str, fn(&mut params::Scene))>,
+}
+
+/// The Bonfire sim with the flame and smoke made invisible, so the embers
+/// (which ride the smoke) are all that's in the frame.
+fn embers_only(s: &mut params::Scene) {
+    s.smoke.flame_intensity = 0.0;
+    s.smoke.smoke_absorption = 0.0;
+    s.sparks.sparks = false;
+}
+
+impl Case {
+    fn name(&self) -> &'static str {
+        self.tweak.map(|t| t.0).unwrap_or(self.preset)
+    }
 }
 
 const CASES: &[Case] = &[
-    Case { preset: "Campfire", frames: 40 },
-    Case { preset: "Fireball", frames: 24 },
-    Case { preset: "Dam Break", frames: 24 },
-    Case { preset: "Fountain", frames: 30 },
-    Case { preset: "Fire & Water", frames: 40 },
+    Case { preset: "Campfire", frames: 40, tweak: None },
+    Case { preset: "Fireball", frames: 24, tweak: None },
+    Case { preset: "Dam Break", frames: 24, tweak: None },
+    Case { preset: "Fountain", frames: 30, tweak: None },
+    Case { preset: "Fire & Water", frames: 40, tweak: None },
+    Case { preset: "Bonfire", frames: 45, tweak: None },
+    Case { preset: "Forge", frames: 40, tweak: None },
+    Case { preset: "Grinder Sparks", frames: 30, tweak: None },
+    Case { preset: "Bonfire", frames: 45, tweak: Some(("Embers only", embers_only)) },
 ];
 
 pub fn slug(name: &str) -> String {
@@ -65,6 +85,9 @@ pub fn slug(name: &str) -> String {
 fn render_case(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Result<RgbaImage, String> {
     let mut scene = params::preset(case.preset).ok_or_else(|| format!("unknown preset {}", case.preset))?;
     scene.render.show_bounds = false;
+    if let Some((_, tweak)) = case.tweak {
+        tweak(&mut scene);
+    }
     // TIDEFIRE_PERTURB=<eps> (default 1e-5) nudges the physics slightly to mimic another GPU/driver's
     // floating-point differences; used to check the thresholds tolerate normal drift.
     if let Some(v) = std::env::var_os("TIDEFIRE_PERTURB") {
@@ -230,28 +253,28 @@ pub fn run(device: &wgpu::Device, queue: &wgpu::Queue, dir: &Path, update: bool)
     for case in CASES {
         let t0 = std::time::Instant::now();
         let img = render_case(device, queue, case)?;
-        let name = slug(case.preset);
+        let name = slug(case.name());
         img.save(out.join(format!("{name}.png"))).map_err(|e| e.to_string())?;
         let ref_path = dir.join(format!("{name}.png"));
         if update {
             img.save(&ref_path).map_err(|e| e.to_string())?;
-            eprintln!("updated  {:<14} ({:.1}s)", case.preset, t0.elapsed().as_secs_f32());
+            eprintln!("updated  {:<14} ({:.1}s)", case.name(), t0.elapsed().as_secs_f32());
             continue;
         }
         let reference = match image::open(&ref_path) {
             Ok(r) => r.to_rgba8(),
             Err(e) => {
                 all_ok = false;
-                eprintln!("MISSING  {:<14} {}: {e}", case.preset, ref_path.display());
+                eprintln!("MISSING  {:<14} {}: {e}", case.name(), ref_path.display());
                 if gha {
-                    println!("::error title=Visual test::{}: missing reference {}", case.preset, ref_path.display());
+                    println!("::error title=Visual test::{}: missing reference {}", case.name(), ref_path.display());
                 }
-                let _ = writeln!(summary, "| {} | – | – | – | – | ❌ missing reference |", case.preset);
+                let _ = writeln!(summary, "| {} | – | – | – | – | ❌ missing reference |", case.name());
                 continue;
             }
         };
         if reference.dimensions() != img.dimensions() {
-            return Err(format!("{}: reference is {:?}, render is {:?}", case.preset, reference.dimensions(), img.dimensions()));
+            return Err(format!("{}: reference is {:?}, render is {:?}", case.name(), reference.dimensions(), img.dimensions()));
         }
         let s = compare(&img, &reference);
         let failures = s.failures();
@@ -269,19 +292,19 @@ pub fn run(device: &wgpu::Device, queue: &wgpu::Queue, dir: &Path, update: bool)
             s.texture * 100.0,
             s.cover * 100.0
         );
-        eprintln!("{}  {:<14} {line}  {:.1}s", if ok { "ok  " } else { "FAIL" }, case.preset, t0.elapsed().as_secs_f32());
+        eprintln!("{}  {:<14} {line}  {:.1}s", if ok { "ok  " } else { "FAIL" }, case.name(), t0.elapsed().as_secs_f32());
         for f in &failures {
             eprintln!("        -> {f}");
         }
         if gha {
             let level = if ok { "notice" } else { "error" };
             let why = if ok { line.clone() } else { failures.join("; ") };
-            println!("::{level} title=Visual test {}::{why}", case.preset);
+            println!("::{level} title=Visual test {}::{why}", case.name());
         }
         let _ = writeln!(
             summary,
             "| {} | {:.2} / {:.1} | {:.2} | {:.3} | {:.1}% | {} |",
-            case.preset,
+            case.name(),
             s.mean,
             s.p99,
             s.color,

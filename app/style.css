@@ -150,3 +150,5 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
 .sample-label { color: var(--dim); font-size: 11px; }
 .sample input[type=range] { width: 90px; height: 22px; -webkit-appearance: none; appearance: none; background: transparent; pointer-events: none; }
 .sample .switch, .sample .btn { pointer-events: none; }
+.preset-grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 14px 6px; }
+.preset-grid .seg { border-radius: 6px; margin-left: 0; height: 26px; }
