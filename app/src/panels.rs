@@ -350,18 +350,18 @@ fn Ocean(ui: Ui) -> impl IntoView {
             {switch!(ui, "Enabled", ocean.enabled)}
             <div class="group" class:off=move || !on.get()>
                 <Fold title="Waves" key="ocean.waves" open=true>
+                    <Hint text="An FFT ocean: a real wind-sea spectrum (JONSWAP) simulated in three detail layers. Seas steeper than height = wavelength / 7 don't exist, so raise the wavelength for bigger waves." />
                     {slider!(ui, "Sea level", -5, 5, ocean.level, unit = " m")}
-                    {slider!(ui, "Wave height", 0, 4, ocean.wave_height, unit = " m")}
-                    {slider!(ui, "Wavelength", 0.5, 40, ocean.wavelength, unit = " m")}
+                    {slider!(ui, "Wave height", 0, 8, ocean.wave_height, unit = " m")}
+                    {slider!(ui, "Wavelength", 2, 120, ocean.wavelength, unit = " m")}
                     {slider!(ui, "Wind direction", 0, 360, ocean.wind_direction, unit = "\u{b0}")}
                     {slider!(ui, "Spread", 0, 2, ocean.spread)}
                     {slider!(ui, "Choppiness", 0, 1, ocean.choppiness)}
                     {slider!(ui, "Speed", 0, 3, ocean.speed)}
                 </Fold>
                 <Fold title="Detail" key="ocean.detail">
-                    {slider!(ui, "Wind chop", 0, 1, ocean.chop)}
-                    {slider!(ui, "Ripples", 0, 0.3, ocean.ripples)}
-                    {slider!(ui, "Ripple scale", 0.5, 10, ocean.ripple_scale)}
+                    {slider!(ui, "Short waves", 0, 1, ocean.chop)}
+                    {slider!(ui, "Ripples", 0, 2, ocean.ripples)}
                     {slider!(ui, "Whitecaps", 0, 1, ocean.whitecaps)}
                 </Fold>
                 <Fold title="Shading" key="ocean.shading">

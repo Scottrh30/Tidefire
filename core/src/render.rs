@@ -221,6 +221,7 @@ pub struct Renderer {
     ocean_pipe: wgpu::RenderPipeline,
     sky_pipe: wgpu::RenderPipeline,
     ocean_buf: wgpu::Buffer,
+    ocean_fft: crate::ocean_fft::OceanFft,
     ocean_idx: wgpu::Buffer,
     ocean_count: u32,
     sampler: wgpu::Sampler,
@@ -580,9 +581,32 @@ impl Renderer {
         let spark_style = gpu::uniform_buffer(device, "sparks.style", &SparkStyleU::zeroed());
 
         // ---- ocean surface + sky background
+        let wave_tex = |binding: u32| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: vf,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2Array,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let ocean_fft = crate::ocean_fft::OceanFft::new(device);
         let ocean_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ocean.layout"),
-            entries: &[gpu::uniform(0, vf), gpu::uniform(1, vf)],
+            entries: &[
+                gpu::uniform(0, vf),
+                gpu::uniform(1, vf),
+                wave_tex(2),
+                wave_tex(3),
+                wave_tex(4),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: vf,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
         let ocean_pl = layout(&ocean_layout);
         let ocean_mod = gpu::shader(
@@ -668,6 +692,7 @@ impl Renderer {
             ocean_pipe,
             sky_pipe,
             ocean_buf,
+            ocean_fft,
             ocean_idx,
             ocean_count,
             sampler,
@@ -873,12 +898,32 @@ impl Renderer {
                         binding: 1,
                         resource: self.ocean_buf.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(self.ocean_fft.disp_view()),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(self.ocean_fft.deriv_view()),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(self.ocean_fft.foam_view()),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&self.ocean_fft.sampler),
+                    },
                 ],
             })
         });
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render"),
         });
+        if draw_ocean {
+            self.ocean_fft
+                .update(queue, &mut enc, &scene.ocean, sim_time);
+        }
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque"),

@@ -457,22 +457,24 @@ pub struct OceanParams {
     pub enabled: bool,
     /// Height of the calm sea surface (m).
     pub level: f32,
-    /// Typical crest-to-trough height of the biggest waves (m).
+    /// Significant wave height (m): the average height of the biggest third of
+    /// the waves. Capped at wavelength / 7, the steepest a real sea gets.
     pub wave_height: f32,
-    /// Length of the main swell (m).
+    /// Peak wavelength of the wind sea (m).
     pub wavelength: f32,
     /// Direction the waves travel, in degrees.
     pub wind_direction: f32,
-    /// How far the shorter waves turn away from the wind (0 = all parallel).
+    /// How widely the waves spread around the wind direction (0 = long parallel swell).
     pub spread: f32,
-    /// Sharp crests and wide troughs (0 = round, 1 = as sharp as possible).
+    /// Sharp crests and wide troughs (horizontal "choppy" displacement, 0..1).
     pub choppiness: f32,
     /// Wave speed multiplier (1 = real deep-water speed).
     pub speed: f32,
-    /// Sharp, short wind chop riding on the swell (0 = smooth swell only).
+    /// Extra energy in the short waves (0 = spectrum as is).
     pub chop: f32,
-    /// Fine wind ripples on top.
+    /// Capillary ripples, 2-40 cm wrinkles on the surface (0..2).
     pub ripples: f32,
+    /// Unused since the FFT ocean; kept so older scene files still load.
     pub ripple_scale: f32,
     /// Foam on the steepest crests (0–1).
     pub whitecaps: f32,
@@ -489,18 +491,18 @@ impl Default for OceanParams {
         Self {
             enabled: false,
             level: 0.0,
-            wave_height: 0.55,
-            wavelength: 3.0,
+            wave_height: 1.4,
+            wavelength: 11.0,
             wind_direction: 75.0,
             spread: 1.0,
-            choppiness: 0.85,
+            choppiness: 1.0,
             speed: 1.0,
-            chop: 0.25,
-            ripples: 0.04,
+            chop: 0.1,
+            ripples: 1.0,
             ripple_scale: 3.5,
             whitecaps: 0.2,
-            deep_color: [0.025, 0.085, 0.125],
-            scatter_color: [0.06, 0.26, 0.3],
+            deep_color: [0.008, 0.035, 0.065],
+            scatter_color: [0.02, 0.085, 0.14],
             foam_color: [0.9, 0.94, 0.97],
             haze_distance: 900.0,
         }
@@ -715,13 +717,13 @@ pub fn preset(name: &str) -> Option<Scene> {
             s.render.show_ground = false;
             s.render.show_bounds = false;
             s.render.sky_background = true;
-            s.render.light_dir = [0.45, 0.6, 0.5];
-            s.render.exposure = 1.35;
-            s.camera.target = [0.0, 2.8, -12.0];
+            s.render.light_dir = [0.35, 0.5, -0.7];
+            s.render.exposure = 1.5;
+            s.camera.target = [0.0, 3.4, -12.0];
             s.camera.distance = 12.0;
-            s.camera.pitch = 0.02;
+            s.camera.pitch = 0.04;
             s.camera.yaw = 0.0;
-            s.camera.fov_deg = 50.0;
+            s.camera.fov_deg = 68.0;
         }
         "Fireball" => {
             s.water.enabled = false;
