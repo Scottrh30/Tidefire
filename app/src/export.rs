@@ -244,12 +244,25 @@ pub fn ExportDialog(ui: Ui) -> impl IntoView {
                     {slider!(ui, "Quality", 0, 100, export.mp4_quality, int)}
                 </Show>
                 <Show when=move || format.get() == ExportFormat::ProRes>
-                    <Choice
-                        label="Profile"
-                        options=ProResProfile::ALL.iter().map(|p| (*p, p.label())).collect()
-                        value=profile
-                        on_change=Callback::new(move |p| ui.edit(|s| s.export.prores_profile = p))
-                    />
+                    <div class="row">
+                        <label>"Profile"</label>
+                        <div class="ctl">
+                            <select class="text"
+                                on:change=move |ev| {
+                                    let i: usize = event_target_value(&ev).parse().unwrap_or(3);
+                                    ui.edit(|s| s.export.prores_profile = ProResProfile::ALL[i.min(5)]);
+                                }>
+                                {ProResProfile::ALL.iter().enumerate().map(|(i, p)| {
+                                    let p = *p;
+                                    view! {
+                                        <option value=i.to_string() selected=move || profile.get() == p>
+                                            {format!("ProRes {}{}", p.label(), if p.has_alpha() { " (keeps alpha)" } else { "" })}
+                                        </option>
+                                    }
+                                }).collect_view()}
+                            </select>
+                        </div>
+                    </div>
                 </Show>
                 {number!(ui, "Width", export.width, int)}
                 {number!(ui, "Height", export.height, int)}

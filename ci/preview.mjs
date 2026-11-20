@@ -111,7 +111,10 @@ await page.evaluate(() => {
     if (args instanceof Uint8Array) {
       calls.push({ cmd, bytes: args.length, id: opts?.headers?.['x-video-id'] });
     } else {
-      calls.push({ cmd, args: JSON.parse(JSON.stringify(args ?? {})) });
+      // Tauri turns the Maps that serde-wasm-bindgen makes into plain objects; so does this
+      const plain = v => v instanceof Map ? Object.fromEntries([...v].map(([k, x]) => [k, plain(x)])) : v;
+      args = plain(args ?? {});
+      calls.push({ cmd, args: JSON.parse(JSON.stringify(args)) });
     }
     switch (cmd) {
       case 'ffmpeg_status': return 'C:/Tidefire/ffmpeg.exe';
@@ -128,7 +131,7 @@ for (const [label, v] of [['Width', '320'], ['Height', '180'], ['Frames', '3']])
   await field(label).press('Enter');
 }
 await page.locator('.dialog .seg', { hasText: 'ProRes' }).click();
-await page.locator('.dialog .seg', { hasText: '4444' }).first().click();
+await page.locator('.dialog select').selectOption({ label: 'ProRes 4444 (keeps alpha)' });
 await shot('07a-export-prores');
 await page.locator('.dialog .seg', { hasText: 'MP4' }).click();
 await page.locator('.dialog button', { hasText: 'Choose' }).click();
