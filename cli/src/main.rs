@@ -1,6 +1,7 @@
 //! Tidefire's command line tool (the app itself is the Tauri window).
 //!
-//! Headless render:  tidefire-cli --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR]
+//! Headless render:  tidefire-cli --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR|FILE]
+//!                                [--format png|mp4|prores] [--quality 0-100] [--prores-profile P]
 //!                                [--transfer apic|flip] [--transparent] [--stats]
 //! Visual tests:     tidefire-cli --visual-test tests/visual [--update]
 
@@ -50,7 +51,7 @@ fn main() {
         return;
     }
     println!(
-        "Tidefire {} command line tool\n\nUsage:\n  tidefire-cli --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR] [--transfer apic|flip] [--transparent] [--stats]\n  tidefire-cli --visual-test DIR [--update]\n  tidefire-cli --dump-preset NAME > scene.tidefire\n\nPresets: {}",
+        "Tidefire {} command line tool\n\nUsage:\n  tidefire-cli --headless [--preset NAME | --scene FILE] [--frames N] [--size WxH] [--out DIR|FILE]\n                 [--format png|mp4|prores] [--quality 0-100] [--prores-profile proxy|lt|422|hq|4444|4444xq]\n                 [--transfer apic|flip] [--transparent] [--stats]\n  tidefire-cli --visual-test DIR [--update]\n  tidefire-cli --dump-preset NAME > scene.tidefire\n\nPresets: {}",
         env!("CARGO_PKG_VERSION"),
         params::PRESETS.join(", ")
     );
@@ -94,19 +95,80 @@ fn headless(args: &[String]) -> Result<(), String> {
     if args.iter().any(|a| a == "--transparent") {
         scene.render.transparent_background = true;
     }
-    let out = PathBuf::from(arg(args, "--out").unwrap_or("tidefire_out"));
-    std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+    if let Some(f) = arg(args, "--format") {
+        scene.export.format = match f.to_ascii_lowercase().as_str() {
+            "png" => params::ExportFormat::PngSequence,
+            "mp4" | "h264" => params::ExportFormat::Mp4,
+            "prores" | "mov" => params::ExportFormat::ProRes,
+            _ => return Err("--format expects png, mp4 or prores".into()),
+        };
+    }
+    if let Some(q) = arg(args, "--quality") {
+        scene.export.mp4_quality = q
+            .parse::<u8>()
+            .map_err(|_| "--quality expects 0-100")?
+            .min(100);
+    }
+    if let Some(p) = arg(args, "--prores-profile") {
+        scene.export.prores_profile = match p.to_ascii_lowercase().as_str() {
+            "proxy" => params::ProResProfile::Proxy,
+            "lt" => params::ProResProfile::Lt,
+            "422" | "standard" => params::ProResProfile::Standard,
+            "hq" | "422hq" => params::ProResProfile::Hq,
+            "4444" => params::ProResProfile::P4444,
+            "4444xq" | "xq" => params::ProResProfile::P4444Xq,
+            _ => return Err("--prores-profile expects proxy, lt, 422, hq, 4444 or 4444xq".into()),
+        };
+        if arg(args, "--format").is_none() {
+            scene.export.format = params::ExportFormat::ProRes;
+        }
+    }
+    let codec = scene.export.codec();
+    if codec.is_some() && !scene.export.keeps_alpha() {
+        // this format can't store transparency: render over the background
+        scene.render.transparent_background = false;
+    }
     let stats = args.iter().any(|a| a == "--stats");
-
-    let (device, queue) = headless_device()?;
-
     let frames = scene.export.frames;
     let (w, h) = (scene.export.width, scene.export.height);
-    std::fs::write(
-        out.join(engine::manifest_name(&scene.export.prefix)),
-        engine::sequence_manifest(&scene),
-    )
-    .map_err(|e| e.to_string())?;
+
+    // PNGs go into a folder; a video is one file.
+    let mut video = None;
+    let out = match codec {
+        None => {
+            let out = PathBuf::from(arg(args, "--out").unwrap_or("tidefire_out"));
+            std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+            std::fs::write(
+                out.join(engine::manifest_name(&scene.export.prefix)),
+                engine::sequence_manifest(&scene),
+            )
+            .map_err(|e| e.to_string())?;
+            out
+        }
+        Some(codec) => {
+            let mut out = PathBuf::from(
+                arg(args, "--out")
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("tidefire_out.{}", codec.extension())),
+            );
+            if out.extension().is_none() {
+                out.set_extension(codec.extension());
+            }
+            if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            let settings = tidefire_video::Settings {
+                codec,
+                width: w,
+                height: h,
+                fps: scene.fps,
+            };
+            video = Some(tidefire_video::VideoWriter::new(&out, settings)?);
+            out
+        }
+    };
+
+    let (device, queue) = headless_device()?;
     let prefix = scene.export.prefix.clone();
     let mut eng = engine::Engine::new(device, queue, scene);
     let target = render::RenderTarget::new(&eng.device, w, h);
@@ -115,8 +177,13 @@ fn headless(args: &[String]) -> Result<(), String> {
         eng.step_frame();
         eng.render(&target, true);
         let img = engine::read_target(&eng.device, &eng.queue, &target);
-        let path = out.join(engine::frame_name(&prefix, f));
-        img.save(&path).map_err(|e| e.to_string())?;
+        match video.as_mut() {
+            Some(v) => v.push(img.into_raw())?,
+            None => {
+                let path = out.join(engine::frame_name(&prefix, f));
+                img.save(&path).map_err(|e| e.to_string())?;
+            }
+        }
         if stats {
             eprintln!(
                 "frame {f:4}  particles {:7}  step {:.1} ms",
@@ -124,6 +191,9 @@ fn headless(args: &[String]) -> Result<(), String> {
                 eng.last_step_ms
             );
         }
+    }
+    if let Some(v) = video {
+        v.finish()?;
     }
     eprintln!(
         "wrote {frames} frames to {} in {:.1}s",

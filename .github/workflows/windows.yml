@@ -15,10 +15,45 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: windows-latest
+  # A small static ffmpeg (H.264 + ProRes only, ~4 MB) for video export,
+  # cross-compiled once and cached; it is embedded in Tidefire.exe.
+  ffmpeg:
+    runs-on: ubuntu-latest
+    outputs:
+      key: ${{ steps.key.outputs.key }}
     steps:
       - uses: actions/checkout@v4
+      # computed here and passed on, since Windows checkouts can change line endings
+      - id: key
+        run: echo "key=ffmpeg-win64-${{ hashFiles('ci/build-ffmpeg.sh') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: ffmpeg-out
+          key: ${{ steps.key.outputs.key }}
+          enableCrossOsArchive: true
+      - name: Build ffmpeg.exe
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mingw-w64 nasm > /dev/null
+          ci/build-ffmpeg.sh windows ffmpeg-out
+
+  build:
+    runs-on: windows-latest
+    needs: ffmpeg
+    steps:
+      - uses: actions/checkout@v4
+      # handed over through the cache (not artifacts, which count against storage)
+      - uses: actions/cache/restore@v4
+        with:
+          path: ffmpeg-out
+          key: ${{ needs.ffmpeg.outputs.key }}
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+      - name: Embed ffmpeg
+        shell: pwsh
+        run: echo "TIDEFIRE_FFMPEG_EMBED=$((Resolve-Path ffmpeg-out/ffmpeg.exe).Path)" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -56,7 +91,8 @@ jobs:
             Windows builds of the newest commit on main.
             - Tidefire.exe: the app (Tauri + Leptos). Run it directly; it uses WebView2 (built into Windows 10 and 11) and needs a GPU with WebGPU support.
             - Tidefire-setup.exe: installs it with a Start menu entry and .tidefire file association.
-            - tidefire-cli.exe: headless renders (`--headless`) and visual tests (`--visual-test`).
+            - tidefire-cli.exe: headless renders (`--headless`, PNG / `--format mp4` / `--format prores`) and visual tests (`--visual-test`).
+            Video export (.mp4 H.264 and ProRes .mov) uses a small ffmpeg built into both programs. That ffmpeg includes x264 and so is GPL-licensed.
           prerelease: false
           make_latest: true
           files: |
@@ -87,6 +123,7 @@ jobs:
           sleep 2
           node ci/preview.mjs http://localhost:8080/ preview
           ls preview
+          grep -q PASS preview/video-export-check.txt
       - name: Publish preview
         if: always() && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2

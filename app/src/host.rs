@@ -41,6 +41,32 @@ async fn invoke(cmd: &str, args: &serde_json::Value) -> Result<JsValue, String> 
     JsFuture::from(p).await.map_err(js_err)
 }
 
+/// Sends `bytes` as the raw request body (no JSON or base64), with headers.
+async fn invoke_raw(
+    cmd: &str,
+    bytes: &[u8],
+    headers: &[(&str, String)],
+) -> Result<JsValue, String> {
+    let t = tauri().ok_or("this needs the Tidefire desktop app")?;
+    let core = get(&t, "core")?;
+    let f: Function = get(&core, "invoke")?
+        .dyn_into()
+        .map_err(|_| "invoke is not a function")?;
+    let body = js_sys::Uint8Array::from(bytes);
+    let h = js_sys::Object::new();
+    for (k, v) in headers {
+        Reflect::set(&h, &(*k).into(), &v.into()).map_err(js_err)?;
+    }
+    let opts = js_sys::Object::new();
+    Reflect::set(&opts, &"headers".into(), &h).map_err(js_err)?;
+    let p: Promise = f
+        .call3(&core, &cmd.into(), &body, &opts)
+        .map_err(js_err)?
+        .dyn_into()
+        .map_err(|_| "invoke did not return a promise")?;
+    JsFuture::from(p).await.map_err(js_err)
+}
+
 fn opt_string(v: JsValue) -> Option<String> {
     if v.is_null() || v.is_undefined() {
         None
@@ -105,4 +131,58 @@ pub async fn write_text(dir: &str, name: &str, text: &str) -> Result<(), String>
     )
     .await
     .map(|_| ())
+}
+
+/// Save dialog for a video file; `ext` is "mp4" or "mov".
+pub async fn pick_video_file(suggested: &str, ext: &str) -> Result<Option<String>, String> {
+    Ok(opt_string(
+        invoke(
+            "pick_video_file",
+            &serde_json::json!({ "suggested": suggested, "ext": ext }),
+        )
+        .await?,
+    ))
+}
+
+/// Where the desktop app's ffmpeg is, or why video export can't run.
+pub async fn ffmpeg_status() -> Result<String, String> {
+    invoke("ffmpeg_status", &serde_json::json!({}))
+        .await?
+        .as_string()
+        .ok_or_else(|| "unexpected reply".into())
+}
+
+/// Starts encoding to `path`; returns the export id.
+pub async fn video_begin(
+    path: &str,
+    settings: &tidefire_core::params::VideoSettings,
+) -> Result<u32, String> {
+    let v = invoke(
+        "video_begin",
+        &serde_json::json!({ "path": path, "settings": settings }),
+    )
+    .await?;
+    v.as_f64()
+        .map(|n| n as u32)
+        .ok_or_else(|| "unexpected reply".into())
+}
+
+/// One frame of RGBA pixels.
+pub async fn video_frame(id: u32, rgba: &[u8]) -> Result<(), String> {
+    invoke_raw("video_frame", rgba, &[("x-video-id", id.to_string())])
+        .await
+        .map(|_| ())
+}
+
+pub async fn video_finish(id: u32) -> Result<u32, String> {
+    let v = invoke("video_finish", &serde_json::json!({ "id": id })).await?;
+    v.as_f64()
+        .map(|n| n as u32)
+        .ok_or_else(|| "unexpected reply".into())
+}
+
+pub async fn video_abort(id: u32) -> Result<(), String> {
+    invoke("video_abort", &serde_json::json!({ "id": id }))
+        .await
+        .map(|_| ())
 }

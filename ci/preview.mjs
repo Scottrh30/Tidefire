@@ -101,6 +101,52 @@ await shot('06-water-dropdowns');
 // Export dialog.
 await page.locator('button', { hasText: 'Export' }).first().click();
 await shot('07-export-dialog');
+
+// Video export, end to end on the interface side: a stand-in for the desktop
+// shell records the calls, so the frames sent to ffmpeg can be checked.
+await page.evaluate(() => {
+  const calls = [];
+  window.__exportCalls = calls;
+  window.__TAURI__ = { core: { invoke: async (cmd, args, opts) => {
+    if (args instanceof Uint8Array) {
+      calls.push({ cmd, bytes: args.length, id: opts?.headers?.['x-video-id'] });
+    } else {
+      calls.push({ cmd, args: JSON.parse(JSON.stringify(args ?? {})) });
+    }
+    switch (cmd) {
+      case 'ffmpeg_status': return 'C:/Tidefire/ffmpeg.exe';
+      case 'pick_video_file': return `C:/renders/${args.suggested}.${args.ext}`;
+      case 'video_begin': return 7;
+      case 'video_finish': return calls.filter(c => c.cmd === 'video_frame').length;
+      default: return null;
+    }
+  } } };
+});
+const field = label => page.locator('.dialog .row', { hasText: label }).locator('input').first();
+for (const [label, v] of [['Width', '320'], ['Height', '180'], ['Frames', '3']]) {
+  await field(label).fill(v);
+  await field(label).press('Enter');
+}
+await page.locator('.dialog .seg', { hasText: 'ProRes' }).click();
+await page.locator('.dialog .seg', { hasText: '4444' }).first().click();
+await shot('07a-export-prores');
+await page.locator('.dialog .seg', { hasText: 'MP4' }).click();
+await page.locator('.dialog button', { hasText: 'Choose' }).click();
+await wait(500);
+await shot('07b-export-mp4');
+await page.locator('.dialog button', { hasText: 'Start export' }).click();
+const t0 = Date.now();
+while (Date.now() - t0 < 120000 && !(await page.evaluate(() => window.__exportCalls.some(c => c.cmd === 'video_finish')))) await wait(500);
+const calls = await page.evaluate(() => window.__exportCalls);
+const begin = calls.find(c => c.cmd === 'video_begin');
+const frames = calls.filter(c => c.cmd === 'video_frame');
+const ok = begin && begin.args.path === 'C:/renders/tidefire.mp4' && begin.args.settings.width === 320
+  && 'H264' in begin.args.settings.codec && frames.length === 3
+  && frames.every(f => f.bytes === 320 * 180 * 4 && f.id === '7') && calls.some(c => c.cmd === 'video_finish');
+log.push(`video export check: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(calls.map(c => c.cmd))} ${JSON.stringify(begin?.args)}`);
+fs.writeFileSync(`${out}/video-export-check.txt`, ok ? 'PASS' : 'FAIL');
+await shot('07c-export-done');
+await page.evaluate(() => { delete window.__TAURI__; });
 await page.keyboard.press('Escape');
 
 // Appearance: the dialog, then the Tide theme applied to the whole interface.

@@ -556,6 +556,20 @@ impl Default for CameraParams {
     }
 }
 
+pub use tidefire_video::{Codec, ProResProfile, Settings as VideoSettings};
+
+/// What an export writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ExportFormat {
+    /// Numbered PNGs plus a `_sequence.json` (keeps alpha).
+    #[default]
+    PngSequence,
+    /// One H.264 .mp4 (no alpha).
+    Mp4,
+    /// One Apple ProRes .mov (4444 profiles keep alpha).
+    ProRes,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExportParams {
@@ -564,6 +578,30 @@ pub struct ExportParams {
     pub frames: u32,
     pub start_frame: u32,
     pub prefix: String,
+    pub format: ExportFormat,
+    /// H.264 quality, 0..=100.
+    pub mp4_quality: u8,
+    pub prores_profile: ProResProfile,
+}
+
+impl ExportParams {
+    /// The video codec, or `None` for a PNG sequence.
+    pub fn codec(&self) -> Option<Codec> {
+        match self.format {
+            ExportFormat::PngSequence => None,
+            ExportFormat::Mp4 => Some(Codec::H264 {
+                quality: self.mp4_quality.min(100),
+            }),
+            ExportFormat::ProRes => Some(Codec::ProRes {
+                profile: self.prores_profile,
+            }),
+        }
+    }
+
+    /// Whether the exported file can hold a transparent background.
+    pub fn keeps_alpha(&self) -> bool {
+        self.codec().map(|c| c.keeps_alpha()).unwrap_or(true)
+    }
 }
 
 impl Default for ExportParams {
@@ -574,6 +612,9 @@ impl Default for ExportParams {
             frames: 120,
             start_frame: 0,
             prefix: "tidefire".into(),
+            format: ExportFormat::PngSequence,
+            mp4_quality: 80,
+            prores_profile: ProResProfile::Hq,
         }
     }
 }

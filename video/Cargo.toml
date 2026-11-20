@@ -1,0 +1,9 @@
+[package]
+name = "tidefire-video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tidefire's video export: pipes rendered RGBA frames into ffmpeg (H.264 .mp4 or ProRes .mov)"
+
+[dependencies]
+serde = { workspace = true }

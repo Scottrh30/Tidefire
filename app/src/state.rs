@@ -32,6 +32,10 @@ pub struct Ui {
 pub struct Export {
     pub open: RwSignal<bool>,
     pub folder: RwSignal<Option<String>>,
+    /// The .mp4 / .mov file for video exports.
+    pub video_path: RwSignal<Option<String>>,
+    /// Where ffmpeg was found (Ok) or why not (Err); `None` until checked.
+    pub ffmpeg: RwSignal<Option<Result<String, String>>>,
     pub reset_first: RwSignal<bool>,
     pub running: RwSignal<bool>,
     pub cancel: RwSignal<bool>,
@@ -66,6 +70,8 @@ impl Ui {
             export: Export {
                 open: RwSignal::new(false),
                 folder: RwSignal::new(None),
+                video_path: RwSignal::new(None),
+                ffmpeg: RwSignal::new(None),
                 reset_first: RwSignal::new(true),
                 running: RwSignal::new(false),
                 cancel: RwSignal::new(false),

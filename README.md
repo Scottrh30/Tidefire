@@ -17,7 +17,12 @@ The app is a Tauri window with a Leptos interface. The simulation engine is comp
 - **Live editing:** every parameter is editable while the sim runs. Orbit camera: drag to orbit, right/middle drag to pan, wheel to zoom. Keys: Space play/pause, `.` step, R reset, Ctrl+S save (Ctrl+Shift+S save as), Ctrl+O open.
 - **Scene files:** scenes save and load as `.tidefire` (JSON).
 - **Presets:** Campfire, Bonfire, Fireball, Forge, Grinder Sparks, Dam Break, Fountain, Fire & Water, Open Ocean.
-- **Export to Reelforge:** PNG sequences at any resolution, optionally with transparent alpha. Each export also writes `<prefix>_sequence.json`, which records fps, frame count, size, alpha and the filename pattern.
+- **Export** at any resolution, in three formats:
+  - **PNG sequence** for Reelforge or any editor, optionally with transparent alpha. Each export also writes `<prefix>_sequence.json`, which records fps, frame count, size, alpha and the filename pattern.
+  - **MP4 (H.264)** with a quality setting, playable anywhere. MP4 has no alpha, so the background is always rendered in.
+  - **Apple ProRes .mov** in 422 Proxy, LT, 422, 422 HQ, 4444 or 4444 XQ. The 4444 profiles keep transparency.
+
+  Video goes through a small ffmpeg (H.264 and ProRes only, about 4 MB) that is built into the Windows programs and unpacked on first use. Frames are piped to it while the next one renders. Elsewhere, ffmpeg is taken from `TIDEFIRE_FFMPEG`, from next to the program, or from the PATH. That ffmpeg includes x264, so it is GPL-licensed.
 
 ## Run
 
@@ -35,6 +40,8 @@ Headless batch render with the command line tool (no window; also works on CI or
 ```
 tidefire-cli --headless --preset "Fire & Water" --frames 120 --size 1920x1080 --out shots/fw --transparent --stats
 tidefire-cli --headless --scene my_shot.tidefire --out shots/my_shot
+tidefire-cli --headless --preset Bonfire --frames 240 --format mp4 --quality 85 --out shots/bonfire.mp4
+tidefire-cli --headless --preset Bonfire --frames 240 --prores-profile 4444 --transparent --out shots/bonfire.mov
 ```
 
 ## Visual tests
@@ -59,7 +66,9 @@ tidefire-cli --visual-test tests/visual --update   # accept the current look as 
 | `core/` | **tidefire-core**: the engine. Fire/smoke and water solvers, renderer, scene model and presets. Builds natively and for WebAssembly. |
 | `core/src/shaders/` | WGSL: `smoke` (fire/smoke solver), `water` (APIC/FLIP, foam, spray), `volume` (raymarcher), `particles` and `fluid` (water surface), `scene` (ground, boxes), `present` (to the screen) |
 | `app/` | **tidefire-app**: the Leptos interface and the WebGPU viewport (Trunk builds it to WebAssembly) |
-| `src-tauri/` | **tidefire**: the Tauri shell (dialogs, scene files, exported frames) |
+| `src-tauri/` | **tidefire**: the Tauri shell (dialogs, scene files, exported frames, video encoding) |
 | `cli/` | **tidefire-cli**: headless renders and the visual tests |
+| `video/` | **tidefire-video**: video export, piping frames into ffmpeg (H.264 .mp4, ProRes .mov) |
+| `ci/build-ffmpeg.sh` | Builds the small static ffmpeg embedded in the Windows programs |
 | `tests/visual/` | Reference frames for the visual tests |
 | `ci/preview.mjs` | The interface screenshots taken on CI |

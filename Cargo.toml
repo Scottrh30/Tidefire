@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["core", "cli", "app", "src-tauri"]
+members = ["core", "cli", "video", "app", "src-tauri"]
 # `cargo build` / `cargo test` on their own cover the engine and the command line tool;
 # the interface is built by Trunk (WebAssembly) and the window by the Tauri CLI.
-default-members = ["core", "cli"]
+default-members = ["core", "cli", "video"]
 
 [workspace.package]
 version = "0.2.0"
