@@ -21,7 +21,7 @@ struct Ocean {
     deep: vec4<f32>,     // deep colour, whitecaps amount
     scatter: vec4<f32>,  // crest scatter colour, haze distance (m)
     foam: vec4<f32>,     // foam colour, significant wave height (m)
-    grid: vec4<u32>,     // rings, segments, _, _
+    grid: vec4<u32>,     // rings, segments, loop scale (always 1), _
     grid_f: vec4<f32>,   // first ring spacing, growth, extent, metres per pixel at 1 m
     light: vec4<f32>,    // scattering strength, absorption scale, shadow strength, sun intensity
 }
@@ -98,7 +98,7 @@ fn light_path(q: vec3<f32>, lu: vec3<f32>, step: f32) -> f32 {
     var t_prev = 0.0;
     var under_prev = surface_y(q.xz) - q.y;
     if (under_prev <= 0.0) { return 0.0; }
-    for (var j = 1; j <= 5; j++) {
+    for (var j = 1; j <= i32(5u * O.grid.z); j++) {
         let t = step * f32(j * j);
         let p = q + lu * t;
         let under = surface_y(p.xz) - p.y;
@@ -139,7 +139,7 @@ fn sun_scatter(p: vec3<f32>, rv: vec3<f32>, lu: vec3<f32>, wave_len: f32, near: 
     var s0 = 0.0;
     var out: Underwater;
     out.transmit = vec3<f32>(0.0);
-    for (var i = 1; i <= 8; i++) {
+    for (var i = 1; i <= i32(8u * O.grid.z); i++) {
         let s1 = 0.19 * f32(i * i); // 0.19 .. 12 m along the ray
         let s = 0.5 * (s0 + s1);
         let q = p + rv * s;
@@ -163,7 +163,7 @@ fn sun_scatter(p: vec3<f32>, rv: vec3<f32>, lu: vec3<f32>, wave_len: f32, near: 
 fn sky_visibility(p: vec3<f32>, r: vec3<f32>, wave_len: f32) -> f32 {
     var vis = 1.0;
     let step = max(wave_len * 0.04, 0.08);
-    for (var j = 1; j <= 7; j++) {
+    for (var j = 1; j <= i32(7u * O.grid.z); j++) {
         let t = step * f32(j * j);
         let q = p + r * t;
         let above = q.y - surface_y(q.xz);
@@ -176,7 +176,7 @@ fn sky_visibility(p: vec3<f32>, r: vec3<f32>, wave_len: f32) -> f32 {
 fn sun_shadow(p: vec3<f32>, l: vec3<f32>, wave_len: f32) -> f32 {
     var lit = 1.0;
     let step = max(wave_len * 0.05, 0.1);
-    for (var j = 1; j <= 6; j++) {
+    for (var j = 1; j <= i32(6u * O.grid.z); j++) {
         let t = step * f32(j * j);
         let q = p + l * t;
         let above = q.y - surface_y(q.xz);

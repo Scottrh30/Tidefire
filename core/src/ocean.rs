@@ -46,7 +46,10 @@ pub fn uniforms(p: &OceanParams, time: f32, pixel: f32) -> OceanU {
         p.foam_color[2],
         crate::ocean_fft::effective_height(p).max(0.01),
     ];
-    u.grid = [RINGS, SEGMENTS, 0, 0];
+    // grid.z = 1 multiplies the shader's loop counts: a uniform bound stops shader
+    // compilers fully unrolling the nested light-path loops (which made the software
+    // WebGPU used in CI take minutes to build the pipeline)
+    u.grid = [RINGS, SEGMENTS, 1, 0];
     // ring spacing grows ~2.6% per ring: 4 cm at the camera, ~1.3 km out
     u.grid_f = [0.04, 1.026, 1300.0, pixel];
     // clarity 1 = clear ocean water; lower = murkier (more absorption)
