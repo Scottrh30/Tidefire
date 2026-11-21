@@ -18,6 +18,7 @@ pub struct OceanU {
     foam: [f32; 4],
     grid: [u32; 4],
     grid_f: [f32; 4],
+    light: [f32; 4],
 }
 
 /// Shading and grid settings; the waves themselves come from the FFT
@@ -48,6 +49,13 @@ pub fn uniforms(p: &OceanParams, time: f32, pixel: f32) -> OceanU {
     u.grid = [RINGS, SEGMENTS, 0, 0];
     // ring spacing grows ~2.6% per ring: 4 cm at the camera, ~1.3 km out
     u.grid_f = [0.04, 1.026, 1300.0, pixel];
+    // clarity 1 = clear ocean water; lower = murkier (more absorption)
+    u.light = [
+        p.scattering.max(0.0),
+        1.0 / p.clarity.max(0.05),
+        p.shadows.clamp(0.0, 1.0),
+        p.sun_intensity.max(0.0),
+    ];
     u
 }
 

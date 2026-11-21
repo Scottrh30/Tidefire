@@ -364,6 +364,13 @@ fn Ocean(ui: Ui) -> impl IntoView {
                     {slider!(ui, "Ripples", 0, 2, ocean.ripples)}
                     {slider!(ui, "Whitecaps", 0, 1, ocean.whitecaps)}
                 </Fold>
+                <Fold title="Light" key="ocean.light">
+                    <Hint text="Sunlight traced through the waves: thin crests glow, the deep insides stay dark, and waves shade the water behind them." />
+                    {slider!(ui, "Scattering", 0, 3, ocean.scattering)}
+                    {slider!(ui, "Clarity", 0.1, 3, ocean.clarity)}
+                    {slider!(ui, "Wave shadows", 0, 1, ocean.shadows)}
+                    {slider!(ui, "Sun intensity", 0, 10, ocean.sun_intensity)}
+                </Fold>
                 <Fold title="Shading" key="ocean.shading">
                     {color!(ui, "Deep colour", ocean.deep_color)}
                     {color!(ui, "Crest glow", ocean.scatter_color)}

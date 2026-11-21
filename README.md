@@ -16,7 +16,9 @@ The app is a Tauri window with a Leptos interface. The simulation engine is comp
   - **Foam:** builds where the surface folds (Jacobian) and fades in streaks.
   - **Filtering:** every layer is mipmapped and anisotropically filtered, so detail stays crisp up close and clean at the horizon.
   - **Settings:** significant wave height and peak wavelength are physical. The height is capped at wavelength / 7, the steepest real seas get. You also control wind direction, spread, choppiness, speed, short-wave energy, ripples, whitecaps and colours.
-  - **Shading:** sky reflection, backlit crest glow, foam and aerial haze, tuned against a reference photo.
+  - **Light inside the water:** for each pixel the view ray is followed into the water. At each step, the path sunlight takes to get there is traced back through the wave to the surface. Light is absorbed per colour like sea water (red first) and scattered mostly forwards. Thin, backlit crests glow teal, the insides of waves stay dark, and a view ray that leaves through the back of a crest sees the sunlit water behind it.
+  - **Wave shadows:** traced over the wave heights towards the sun, so waves shade the water behind them (seen as missing glow, as on real water).
+  - **Shading:** sky reflection, foam and aerial haze, tuned against a reference photo. Settings: scattering, clarity, wave shadows and sun intensity.
 - **Whitewater:** foam on fast or agitated particles. Ballistic spray droplets are spawned from fast surface particles and get drag, a set lifetime and re-absorption into the water.
 - **Sparks & embers:** GPU particles. Sparks are launched in a cone (continuously and in random bursts), fall, drag, bounce off the ground and cool from yellow-white to red, drawn as motion-blurred streaks. Embers are lifted by the fire's smoke currents with a swirling wander and flicker as they rise. There are presets (Campfire crackle, Bonfire embers, Grinder sparks, Forge, Firefly drift) plus the Bonfire, Forge and Grinder Sparks scenes.
 - **Combined scenes:** fire and water run side by side, each in its own domain, and depth-composite correctly.

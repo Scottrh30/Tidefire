@@ -476,6 +476,14 @@ pub struct OceanParams {
     pub ripples: f32,
     /// Unused since the FFT ocean; kept so older scene files still load.
     pub ripple_scale: f32,
+    /// Sunlight scattered inside the water (0 = none, 1 = clear sea water).
+    pub scattering: f32,
+    /// How far light gets through the water (1 = clear open ocean, lower = murkier).
+    pub clarity: f32,
+    /// Waves shadowing each other from the sun (0..1).
+    pub shadows: f32,
+    /// Brightness of the sunlight on and in the water.
+    pub sun_intensity: f32,
     /// Foam on the steepest crests (0–1).
     pub whitecaps: f32,
     pub deep_color: [f32; 3],
@@ -505,6 +513,10 @@ impl Default for OceanParams {
             scatter_color: [0.02, 0.085, 0.14],
             foam_color: [0.9, 0.94, 0.97],
             haze_distance: 900.0,
+            scattering: 1.0,
+            clarity: 1.0,
+            shadows: 1.0,
+            sun_intensity: 3.0,
         }
     }
 }
