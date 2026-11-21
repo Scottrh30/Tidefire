@@ -480,7 +480,7 @@ pub struct OceanParams {
     pub scattering: f32,
     /// How far light gets through the water (1 = clear open ocean, lower = murkier).
     pub clarity: f32,
-    /// Waves shadowing each other from the sun (0..1).
+    /// Waves shadowing each other: from the sun, and in reflections of the sky (0..1).
     pub shadows: f32,
     /// Brightness of the sunlight on and in the water.
     pub sun_intensity: f32,
@@ -730,7 +730,7 @@ pub fn preset(name: &str) -> Option<Scene> {
             s.render.show_bounds = false;
             s.render.sky_background = true;
             s.render.light_dir = [0.35, 0.5, -0.7];
-            s.render.exposure = 1.5;
+            s.render.exposure = 1.75;
             s.camera.target = [0.0, 3.4, -12.0];
             s.camera.distance = 12.0;
             s.camera.pitch = 0.04;

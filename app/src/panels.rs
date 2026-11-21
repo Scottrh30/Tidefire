@@ -369,6 +369,7 @@ fn Ocean(ui: Ui) -> impl IntoView {
                     {slider!(ui, "Scattering", 0, 3, ocean.scattering)}
                     {slider!(ui, "Clarity", 0.1, 3, ocean.clarity)}
                     {slider!(ui, "Wave shadows", 0, 1, ocean.shadows)}
+                    <Hint text="Wave shadows also stop troughs from reflecting sky that the next wave blocks." />
                     {slider!(ui, "Sun intensity", 0, 10, ocean.sun_intensity)}
                 </Fold>
                 <Fold title="Shading" key="ocean.shading">

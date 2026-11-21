@@ -157,6 +157,21 @@ fn sun_scatter(p: vec3<f32>, rv: vec3<f32>, lu: vec3<f32>, wave_len: f32, near: 
     return out;
 }
 
+// How much of the reflected ray from p reaches the sky (1) rather than running
+// into a nearby wave (0). Marched over the smooth big-wave heights, with a soft
+// edge so the result doesn't flicker as the waves move.
+fn sky_visibility(p: vec3<f32>, r: vec3<f32>, wave_len: f32) -> f32 {
+    var vis = 1.0;
+    let step = max(wave_len * 0.04, 0.08);
+    for (var j = 1; j <= 7; j++) {
+        let t = step * f32(j * j);
+        let q = p + r * t;
+        let above = q.y - surface_y(q.xz);
+        vis = min(vis, clamp(above / (t * 0.25) + 0.5, 0.0, 1.0));
+    }
+    return vis;
+}
+
 // Soft shadow from other waves on point p, marching towards the sun above water.
 fn sun_shadow(p: vec3<f32>, l: vec3<f32>, wave_len: f32) -> f32 {
     var lit = 1.0;
@@ -224,7 +239,7 @@ fn fs_main(in: VOut) -> FOut {
     // horizon: blend from the horizon sky into dark sea
     let sky_r = sky_base(vec3<f32>(r.x, max(r.y, 0.01), r.z)) * vec3<f32>(1.25, 1.42, 1.5);
     let sea_r = O.deep.rgb * (sky_color(vec3<f32>(0.0, 1.0, 0.0), l) * 1.3 + vec3<f32>(0.1)) * 1.5;
-    let refl = mix(sky_r, sea_r, smoothstep(0.0, 0.25, -r.y));
+    var refl = mix(sky_r, sea_r, smoothstep(0.0, 0.25, -r.y));
     // specular anti-aliasing: widen the highlight where the normal changes fast
     let nvar = length(fwidth(n));
     let spec = sun_specular(n, v, l, clamp(0.25 + nvar * 1.5 + dist * 0.0004, 0.0, 1.0));
@@ -238,6 +253,15 @@ fn fs_main(in: VOut) -> FOut {
     // The light paths run against the smooth big-wave surface (surface_y), so
     // start them on it: the detailed surface differs from it by the small waves.
     let p_smooth = vec3<f32>(in.world.x, surface_y(in.world.xz), in.world.z);
+    // Reflection occlusion: in a trough the reflected ray often hits the next wave,
+    // which shows its dark water instead of bright sky. (Near the camera only: far
+    // away the blurred heights are too coarse, and the haze takes over.)
+    var sky_vis = 1.0;
+    if (O.light.z > 0.0 && dist < wave_len * 12.0) {
+        let vis = sky_visibility(p_smooth + vec3<f32>(0.0, 0.05, 0.0), r, wave_len);
+        sky_vis = mix(1.0, vis, O.light.z * (1.0 - smoothstep(wave_len * 6.0, wave_len * 12.0, dist)));
+        refl = mix(sea_r * 0.7, refl, sky_vis);
+    }
     var shadow = 1.0;
     if (O.light.z > 0.0 && dist < wave_len * 8.0) {
         shadow = mix(1.0, sun_shadow(p_smooth, l, wave_len), O.light.z * (1.0 - smoothstep(wave_len * 4.0, wave_len * 8.0, dist)));
